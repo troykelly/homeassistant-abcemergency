@@ -1,0 +1,106 @@
+name: "Bug Report"
+description: "Report a bug with the ABC Emergency integration"
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug Report
+
+        Thank you for taking the time to report an issue!
+
+        **Before submitting:**
+        - Search [existing issues](https://github.com/troykelly/homeassistant-abcemergency/issues) for duplicates
+        - Ensure you're using the latest version of the integration
+
+        ---
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Pre-submission Checklist"
+      options:
+        - label: "I have searched existing issues for duplicates"
+          required: true
+        - label: "I am using the latest version of the integration"
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Describe the Bug"
+      description: "What happened? What did you expect to happen?"
+      placeholder: "A clear description of what the bug is..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to Reproduce"
+      description: "How can we reproduce the issue?"
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: dropdown
+    id: integration_version
+    attributes:
+      label: "Integration Version"
+      options:
+        - "0.1.0"
+        - "Not listed (specify below)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ha_version
+    attributes:
+      label: "Home Assistant Version"
+      options:
+        - "2025.1.x or newer"
+        - "2024.12.x"
+        - "2024.11.x"
+        - "2024.10.x or older"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ha_installation
+    attributes:
+      label: "Home Assistant Installation Type"
+      options:
+        - "Home Assistant OS"
+        - "Home Assistant Container (Docker)"
+        - "Home Assistant Supervised"
+        - "Home Assistant Core"
+        - "Other / Unknown"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Debug Logs"
+      description: |
+        Please provide debug logs. Add this to `configuration.yaml` and restart:
+        ```yaml
+        logger:
+          logs:
+            custom_components.abcemergency: debug
+        ```
+        Then reproduce the issue and check Settings > System > Logs
+      placeholder: "Paste relevant log entries here..."
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional Context"
+      description: "Any other information that might help diagnose the issue"
+      placeholder: "Screenshots, configuration details, etc."

@@ -1,0 +1,12 @@
+{
+  "domain": "abcemergency",
+  "name": "ABC Emergency",
+  "codeowners": ["@troykelly"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/troykelly/homeassistant-abcemergency",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/troykelly/homeassistant-abcemergency/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

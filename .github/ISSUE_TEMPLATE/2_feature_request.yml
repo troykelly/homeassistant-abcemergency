@@ -1,0 +1,70 @@
+name: "Feature Request"
+description: "Suggest a new feature for the ABC Emergency integration"
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Feature Request
+
+        Have an idea to improve the ABC Emergency integration? We'd love to hear it!
+
+        **Before submitting:**
+        - Search [existing issues](https://github.com/troykelly/homeassistant-abcemergency/issues) for similar requests
+        - Check if the feature is already planned on the [project board](https://github.com/users/troykelly/projects/3)
+
+        ---
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Pre-submission Checklist"
+      options:
+        - label: "I have searched existing issues for similar requests"
+          required: true
+
+  - type: dropdown
+    id: feature_type
+    attributes:
+      label: "Feature Category"
+      options:
+        - "New sensor type"
+        - "New entity platform"
+        - "Improved alerting"
+        - "Configuration option"
+        - "Automation support"
+        - "UI/UX improvement"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Feature Description"
+      description: "What feature would you like to see?"
+      placeholder: "A clear description of the feature..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: "Use Case"
+      description: "How would you use this feature? What problem does it solve?"
+      placeholder: "I want this feature because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Have you considered any alternative solutions or workarounds?"
+      placeholder: "I've tried..."
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional Context"
+      description: "Any other information, mockups, or examples"

@@ -8,6 +8,7 @@ from custom_components.abcemergency.helpers import (
     bearing_to_direction,
     calculate_distance,
     get_bearing,
+    get_radius_category,
 )
 
 
@@ -136,3 +137,44 @@ class TestBearingToDirection:
         """Test bearing > 360 is normalized."""
         # 450 degrees should be 90 degrees (East)
         assert bearing_to_direction(450) == "E"
+
+
+class TestGetRadiusCategory:
+    """Test incident type to radius category mapping."""
+
+    @pytest.mark.parametrize(
+        ("event_type", "expected"),
+        [
+            # Bushfire category
+            ("Bushfire", "bushfire"),
+            ("Grass Fire", "bushfire"),
+            ("Fuel Reduction Burn", "bushfire"),
+            ("Planned Burn", "bushfire"),
+            ("Burn Off", "bushfire"),
+            # Earthquake
+            ("Earthquake", "earthquake"),
+            # Storm
+            ("Storm", "storm"),
+            ("Thunderstorm", "storm"),
+            ("Wind", "storm"),
+            ("Weather", "storm"),
+            # Flood
+            ("Flood", "flood"),
+            # Fire (structure)
+            ("Fire", "fire"),
+            ("Structure Fire", "fire"),
+            ("Vehicle Fire", "fire"),
+            # Heat
+            ("Extreme Heat", "heat"),
+            ("Heatwave", "heat"),
+        ],
+    )
+    def test_known_event_types(self, event_type: str, expected: str) -> None:
+        """Test known event types map to correct radius category."""
+        assert get_radius_category(event_type) == expected
+
+    def test_unknown_event_type_returns_other(self) -> None:
+        """Test unknown event types return 'other' category."""
+        assert get_radius_category("Unknown Event") == "other"
+        assert get_radius_category("Random Incident") == "other"
+        assert get_radius_category("") == "other"

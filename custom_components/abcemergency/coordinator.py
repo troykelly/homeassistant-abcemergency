@@ -203,6 +203,9 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         except (ValueError, KeyError):
             updated = datetime.now()
 
+        # cardBody fields may be missing in some incidents
+        card_body = emergency.get("cardBody", {})
+
         return EmergencyIncident(
             id=emergency["id"],
             headline=emergency["headline"],
@@ -210,9 +213,9 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             alert_text=emergency["alertLevelInfoPrepared"]["text"],
             event_type=emergency["eventLabelPrepared"]["labelText"],
             event_icon=emergency["eventLabelPrepared"]["icon"],
-            status=emergency["cardBody"]["status"],
-            size=emergency["cardBody"]["size"],
-            source=emergency["cardBody"]["source"],
+            status=card_body.get("status"),
+            size=card_body.get("size"),
+            source=card_body.get("source", "Unknown"),
             location=location,
             updated=updated,
             distance_km=distance,

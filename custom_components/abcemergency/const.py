@@ -157,6 +157,14 @@ class GeometryCollectionGeometry(TypedDict):
     geometries: list[PointGeometry | PolygonGeometry]
 
 
+class TopLevelPointGeometry(TypedDict, total=False):
+    """Top-level Point geometry (may have optional CRS)."""
+
+    type: Literal["Point"]
+    crs: CRS
+    coordinates: list[float]  # [longitude, latitude]
+
+
 class TopLevelPolygonGeometry(TypedDict):
     """Top-level Polygon geometry with CRS (used by BOM warnings)."""
 
@@ -174,7 +182,12 @@ class TopLevelMultiPolygonGeometry(TypedDict):
 
 
 # Union type for all possible top-level geometry types in Emergency objects
-Geometry = GeometryCollectionGeometry | TopLevelPolygonGeometry | TopLevelMultiPolygonGeometry
+Geometry = (
+    GeometryCollectionGeometry
+    | TopLevelPointGeometry
+    | TopLevelPolygonGeometry
+    | TopLevelMultiPolygonGeometry
+)
 
 
 class AlertLevelInfo(TypedDict):

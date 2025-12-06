@@ -1069,6 +1069,287 @@ class TestGeometryExtraction:
         # Incident should be skipped due to empty ring
         assert len(data.incidents) == 0
 
+    async def test_multipolygon_with_empty_coordinates(
+        self, hass: HomeAssistant, mock_client: MagicMock
+    ) -> None:
+        """Test MultiPolygon with empty coordinates is skipped."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-empty-multipoly",
+                    "headline": "Empty MultiPolygon",
+                    "to": "/emergency/warning/AUREMER-empty-multipoly",
+                    "alertLevelInfoPrepared": {
+                        "text": "",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
+                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
+                    "geometry": {
+                        "type": "MultiPolygon",
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "coordinates": [],  # Empty coordinates
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 0,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Incident should be skipped due to empty coordinates
+        assert len(data.incidents) == 0
+
+    async def test_multipolygon_with_empty_rings(
+        self, hass: HomeAssistant, mock_client: MagicMock
+    ) -> None:
+        """Test MultiPolygon with empty rings array is skipped."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-empty-mp-rings",
+                    "headline": "Empty MultiPolygon Rings",
+                    "to": "/emergency/warning/AUREMER-empty-mp-rings",
+                    "alertLevelInfoPrepared": {
+                        "text": "",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
+                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
+                    "geometry": {
+                        "type": "MultiPolygon",
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "coordinates": [[[]]],  # Empty ring within polygon
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 0,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Incident should be skipped due to empty rings
+        assert len(data.incidents) == 0
+
+    async def test_geometry_collection_with_polygon_fallback(
+        self, hass: HomeAssistant, mock_client: MagicMock
+    ) -> None:
+        """Test GeometryCollection falls back to Polygon centroid when no Point."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-gc-polygon-fallback",
+                    "headline": "GC Polygon Fallback",
+                    "to": "/emergency/warning/AUREMER-gc-polygon-fallback",
+                    "alertLevelInfoPrepared": {
+                        "text": "",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": None,
+                        "size": "100 ha",
+                        "status": "Active",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "type": "GeometryCollection",
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "geometries": [
+                            {
+                                "type": "Polygon",
+                                "coordinates": [
+                                    [
+                                        [150.0, -33.0],
+                                        [152.0, -33.0],
+                                        [152.0, -35.0],
+                                        [150.0, -35.0],
+                                        [150.0, -33.0],
+                                    ]
+                                ],
+                            }
+                        ],  # Only Polygon, no Point
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        # Centroid should be approximately the center of the polygon
+        # Note: includes closing point, so average is: (-33 + -33 + -35 + -35 + -33) / 5 = -33.8
+        assert data.incidents[0].location.latitude == -33.8
+        assert data.incidents[0].location.longitude == 150.8
+
+    async def test_nested_polygon_with_empty_coordinates(
+        self, hass: HomeAssistant, mock_client: MagicMock
+    ) -> None:
+        """Test nested Polygon in GeometryCollection with empty coordinates is skipped."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-gc-empty-poly",
+                    "headline": "GC Empty Polygon",
+                    "to": "/emergency/warning/AUREMER-gc-empty-poly",
+                    "alertLevelInfoPrepared": {
+                        "text": "",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": None,
+                        "size": None,
+                        "status": "Active",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "type": "GeometryCollection",
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "geometries": [
+                            {
+                                "type": "Polygon",
+                                "coordinates": [],  # Empty polygon
+                            }
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 0,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Incident should be skipped due to empty polygon coordinates
+        assert len(data.incidents) == 0
+
+    async def test_nested_polygon_with_empty_ring(
+        self, hass: HomeAssistant, mock_client: MagicMock
+    ) -> None:
+        """Test nested Polygon in GeometryCollection with empty ring is skipped."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-gc-empty-ring",
+                    "headline": "GC Empty Ring",
+                    "to": "/emergency/warning/AUREMER-gc-empty-ring",
+                    "alertLevelInfoPrepared": {
+                        "text": "",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": None,
+                        "size": None,
+                        "status": "Active",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "type": "GeometryCollection",
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "geometries": [
+                            {
+                                "type": "Polygon",
+                                "coordinates": [[]],  # Empty ring
+                            }
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 0,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Incident should be skipped due to empty ring
+        assert len(data.incidents) == 0
+
 
 class TestModels:
     """Test model classes."""

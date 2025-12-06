@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
@@ -24,6 +24,12 @@ from .const import (
     AlertLevel,
     Emergency,
     Geometry,
+    GeometryCollectionGeometry,
+    PointGeometry,
+    PolygonGeometry,
+    TopLevelMultiPolygonGeometry,
+    TopLevelPointGeometry,
+    TopLevelPolygonGeometry,
 )
 from .exceptions import ABCEmergencyAPIError, ABCEmergencyConnectionError
 from .helpers import bearing_to_direction, calculate_distance, get_bearing
@@ -229,67 +235,138 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         Returns:
             Coordinate with latitude and longitude, or None if extraction fails.
         """
-        geom_type = geometry.get("type")
+        geom_type = geometry["type"]
 
         if geom_type == "GeometryCollection":
-            geometries = geometry.get("geometries", [])
+            collection = cast(GeometryCollectionGeometry, geometry)
+            geometries = collection["geometries"]
             for geom in geometries:
-                if geom.get("type") == "Point":
-                    coords = geom.get("coordinates", [])
+                if geom["type"] == "Point":
+                    point_geom = cast(PointGeometry, geom)
+                    coords = point_geom["coordinates"]
                     if len(coords) >= 2:
                         # GeoJSON uses [longitude, latitude]
                         return Coordinate(latitude=coords[1], longitude=coords[0])
             # If no point found, try to get centroid of first polygon
             for geom in geometries:
-                if geom.get("type") in ("Polygon", "MultiPolygon"):
-                    return self._calculate_polygon_centroid(geom)
+                if geom["type"] == "Polygon":
+                    return self._calculate_polygon_centroid_from_polygon(
+                        cast(PolygonGeometry, geom)
+                    )
 
         elif geom_type == "Point":
-            coords = geometry.get("coordinates", [])
+            point = cast(TopLevelPointGeometry, geometry)
+            coords = point["coordinates"]
             if len(coords) >= 2:
                 return Coordinate(latitude=coords[1], longitude=coords[0])
 
-        elif geom_type == "Polygon" or geom_type == "MultiPolygon":
-            return self._calculate_polygon_centroid(geometry)
+        elif geom_type == "Polygon":
+            return self._calculate_polygon_centroid(cast(TopLevelPolygonGeometry, geometry))
+
+        elif geom_type == "MultiPolygon":
+            return self._calculate_multipolygon_centroid(
+                cast(TopLevelMultiPolygonGeometry, geometry)
+            )
 
         return None
 
-    def _calculate_polygon_centroid(self, geometry: Geometry) -> Coordinate | None:
-        """Calculate the centroid of a polygon or multipolygon.
+    def _calculate_polygon_centroid(self, geometry: TopLevelPolygonGeometry) -> Coordinate | None:
+        """Calculate the centroid of a top-level polygon.
 
         This is a simple average of all coordinates, which gives an
         approximate center point for the polygon.
 
         Args:
-            geometry: Polygon or MultiPolygon geometry object.
+            geometry: TopLevelPolygonGeometry object.
 
         Returns:
             Coordinate representing the centroid, or None if calculation fails.
         """
-        coords = geometry.get("coordinates", [])
+        coords = geometry["coordinates"]
         if not coords:
             return None
 
         all_points: list[tuple[float, float]] = []
 
-        geom_type = geometry.get("type")
+        # Polygon: [[[lon, lat], ...]]
+        if len(coords) > 0:
+            ring = coords[0]  # Outer ring
+            for point in ring:
+                if len(point) >= 2:
+                    all_points.append((point[0], point[1]))
 
-        if geom_type == "Polygon":
-            # Polygon: [[[lon, lat], ...]]
-            if coords and len(coords) > 0:
-                ring = coords[0]  # Outer ring
+        if not all_points:
+            return None
+
+        # Calculate average
+        avg_lon = sum(p[0] for p in all_points) / len(all_points)
+        avg_lat = sum(p[1] for p in all_points) / len(all_points)
+
+        return Coordinate(latitude=avg_lat, longitude=avg_lon)
+
+    def _calculate_multipolygon_centroid(
+        self, geometry: TopLevelMultiPolygonGeometry
+    ) -> Coordinate | None:
+        """Calculate the centroid of a multipolygon.
+
+        This is a simple average of all coordinates, which gives an
+        approximate center point for the multipolygon.
+
+        Args:
+            geometry: TopLevelMultiPolygonGeometry object.
+
+        Returns:
+            Coordinate representing the centroid, or None if calculation fails.
+        """
+        coords = geometry["coordinates"]
+        if not coords:
+            return None
+
+        all_points: list[tuple[float, float]] = []
+
+        # MultiPolygon: [[[[lon, lat], ...]]]
+        for polygon in coords:
+            if polygon and len(polygon) > 0:
+                ring = polygon[0]  # Outer ring
                 for point in ring:
                     if len(point) >= 2:
                         all_points.append((point[0], point[1]))
 
-        elif geom_type == "MultiPolygon":
-            # MultiPolygon: [[[[lon, lat], ...]]]
-            for polygon in coords:
-                if polygon and len(polygon) > 0:
-                    ring = polygon[0]  # Outer ring
-                    for point in ring:
-                        if len(point) >= 2:
-                            all_points.append((point[0], point[1]))
+        if not all_points:
+            return None
+
+        # Calculate average
+        avg_lon = sum(p[0] for p in all_points) / len(all_points)
+        avg_lat = sum(p[1] for p in all_points) / len(all_points)
+
+        return Coordinate(latitude=avg_lat, longitude=avg_lon)
+
+    def _calculate_polygon_centroid_from_polygon(
+        self, geometry: PolygonGeometry
+    ) -> Coordinate | None:
+        """Calculate the centroid of a nested polygon geometry.
+
+        This is a simple average of all coordinates, which gives an
+        approximate center point for the polygon.
+
+        Args:
+            geometry: PolygonGeometry object (nested, no CRS).
+
+        Returns:
+            Coordinate representing the centroid, or None if calculation fails.
+        """
+        coords = geometry["coordinates"]
+        if not coords:
+            return None
+
+        all_points: list[tuple[float, float]] = []
+
+        # Polygon: [[[lon, lat], ...]]
+        if len(coords) > 0:
+            ring = coords[0]  # Outer ring
+            for point in ring:
+                if len(point) >= 2:
+                    all_points.append((point[0], point[1]))
 
         if not all_points:
             return None

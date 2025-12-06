@@ -25,7 +25,6 @@ from .const import (
     Emergency,
     Geometry,
     GeometryCollectionGeometry,
-    PointGeometry,
     PolygonGeometry,
     TopLevelMultiPolygonGeometry,
     TopLevelPointGeometry,
@@ -242,17 +241,16 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             geometries = collection["geometries"]
             for geom in geometries:
                 if geom["type"] == "Point":
-                    point_geom = cast(PointGeometry, geom)
-                    coords = point_geom["coordinates"]
+                    # Type is automatically narrowed to PointGeometry
+                    coords = geom["coordinates"]
                     if len(coords) >= 2:
                         # GeoJSON uses [longitude, latitude]
                         return Coordinate(latitude=coords[1], longitude=coords[0])
             # If no point found, try to get centroid of first polygon
             for geom in geometries:
                 if geom["type"] == "Polygon":
-                    return self._calculate_polygon_centroid_from_polygon(
-                        cast(PolygonGeometry, geom)
-                    )
+                    # Type is automatically narrowed to PolygonGeometry
+                    return self._calculate_polygon_centroid_from_polygon(geom)
 
         elif geom_type == "Point":
             point = cast(TopLevelPointGeometry, geometry)

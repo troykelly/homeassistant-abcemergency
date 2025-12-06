@@ -192,125 +192,16 @@ Geohashes provide location-based filtering. Common Australian prefixes:
 
 ### Response Types
 
-#### Emergency Object
-
-```python
-class EmergencyResponse(TypedDict):
-    id: str  # e.g., "AUREMER-2f9decd05e45ec956293c658d4c94a27"
-    headline: str  # e.g., "Nimbin Rd, Koolewong"
-    to: str  # URL path to warning detail page
-    alertLevelInfoPrepared: AlertLevelInfo
-    emergencyTimestampPrepared: EmergencyTimestamp
-    eventLabelPrepared: EventLabel
-    cardBody: CardBody
-    geometry: Geometry
-```
-
-#### Alert Level Info
-
-```python
-class AlertLevelInfo(TypedDict):
-    text: str      # "Emergency", "Watch and Act", "Advice"
-    level: str     # "extreme", "severe", "moderate", "minor"
-    style: str     # CSS style class
-```
+For complete TypedDict definitions, see [docs/api-types.md](docs/api-types.md).
 
 **Alert Level Mapping:**
 
-| API Level | Australian Warning System | Color |
-|-----------|---------------------------|-------|
-| `extreme` | Emergency Warning | Red |
-| `severe` | Watch and Act | Orange |
-| `moderate` | Advice | Yellow |
-| `minor` | Information | Blue/Grey |
-
-#### Event Label
-
-```python
-class EventLabel(TypedDict):
-    icon: str       # "fire", "flood", "storm", "weather", etc.
-    labelText: str  # Human-readable type
-```
-
-**Known Event Types:**
-
-- Bushfire
-- Grass Fire
-- Fire
-- Flood
-- Storm
-- Thunderstorm
-- Wind
-- Heatwave
-- Weather
-- Fire ban
-- Motor Vehicle Accident
-- Sheep Grazier Warning
-- Other Non-Urgent Alerts
-
-#### Card Body
-
-```python
-class CardBody(TypedDict):
-    type: str       # "Bush Fire", "Grass Fire", etc.
-    size: str       # "0 ha", "9052 ha"
-    status: str     # Incident status
-    source: str     # Source agency
-```
-
-**Known Statuses:**
-
-- Being controlled
-- Under Control / Under control
-- Contained
-- Not yet controlled
-- Active
-- Responding
-- Request For Assistance
-- Safe
-- Minor
-- Unknown
-- Actual (for weather warnings)
-
-**Known Sources:**
-
-- NSW Rural Fire Service
-- Fire and Rescue NSW
-- NSW National Parks and Wildlife Service
-- Forestry Corporation of NSW
-- New South Wales State Emergency Service
-- VIC Country Fire Authority
-- Emergency Management Victoria
-- Queensland Fire Department
-- South Australian Country Fire Service
-- Australian Government Bureau of Meteorology
-
-#### Emergency Timestamp
-
-```python
-class EmergencyTimestamp(TypedDict):
-    date: str           # ISO 8601 datetime
-    formattedTime: str  # Human-readable time
-    prefix: str         # "Effective from"
-    updatedTime: str    # ISO 8601 last update time
-```
-
-#### Geometry
-
-```python
-class Geometry(TypedDict):
-    type: str  # "GeometryCollection"
-    crs: CRS
-    geometries: list[PointGeometry | PolygonGeometry]
-
-class PointGeometry(TypedDict):
-    type: Literal["Point"]
-    coordinates: tuple[float, float]  # [longitude, latitude]
-
-class PolygonGeometry(TypedDict):
-    type: Literal["Polygon"]
-    coordinates: list[list[tuple[float, float]]]
-```
+| API Level | API Text | Australian Warning System | Color |
+|-----------|----------|---------------------------|-------|
+| `extreme` | `"Emergency"` | Emergency Warning | Red |
+| `severe` | `"Watch and Act"` | Watch and Act | Orange |
+| `moderate` | `"Advice"` | Advice | Yellow |
+| `minor` | `""` | Information | Blue/Grey |
 
 ### State Codes
 

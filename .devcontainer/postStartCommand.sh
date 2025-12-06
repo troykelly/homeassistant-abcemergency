@@ -9,8 +9,8 @@ export PATH="/home/vscode/.local/ha-venv/bin:$PATH"
 
 # Ensure custom_components symlink is up to date
 if [ -d "/workspaces/homeassistant-abcemergency/custom_components" ]; then
-    mkdir -p /workspaces/config/custom_components
-    ln -sf /workspaces/homeassistant-abcemergency/custom_components/* /workspaces/config/custom_components/ 2>/dev/null || true
+    mkdir -p /workspaces/homeassistant-abcemergency/config/custom_components
+    ln -sf /workspaces/homeassistant-abcemergency/custom_components/* /workspaces/homeassistant-abcemergency/config/custom_components/ 2>/dev/null || true
 fi
 
 # Update development dependencies if requirements changed

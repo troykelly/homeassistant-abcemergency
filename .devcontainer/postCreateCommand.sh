@@ -10,12 +10,12 @@ echo "=== Home Assistant ABC Emergency Integration - Dev Container Setup ==="
 export PATH="/home/vscode/.local/ha-venv/bin:$PATH"
 
 # Create config directory if it doesn't exist
-mkdir -p /workspaces/config/custom_components
+mkdir -p /workspaces/homeassistant-abcemergency/config/custom_components
 
 # Link the custom component for development
 if [ -d "/workspaces/homeassistant-abcemergency/custom_components" ]; then
     echo "Linking custom_components to Home Assistant config..."
-    ln -sf /workspaces/homeassistant-abcemergency/custom_components/* /workspaces/config/custom_components/ 2>/dev/null || true
+    ln -sf /workspaces/homeassistant-abcemergency/custom_components/* /workspaces/homeassistant-abcemergency/config/custom_components/ 2>/dev/null || true
 fi
 
 # Install project dependencies if pyproject.toml or requirements exist
@@ -49,9 +49,9 @@ if [ -f ".pre-commit-config.yaml" ]; then
 fi
 
 # Create basic Home Assistant configuration if it doesn't exist
-if [ ! -f "/workspaces/config/configuration.yaml" ]; then
+if [ ! -f "/workspaces/homeassistant-abcemergency/config/configuration.yaml" ]; then
     echo "Creating default Home Assistant configuration..."
-    cat > /workspaces/config/configuration.yaml << 'EOF'
+    cat > /workspaces/homeassistant-abcemergency/config/configuration.yaml << 'EOF'
 # Home Assistant Development Configuration
 # This configuration is for testing custom integrations
 

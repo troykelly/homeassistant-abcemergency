@@ -21,12 +21,87 @@ DEFAULT_SCAN_INTERVAL: Final = 300  # 5 minutes in seconds
 DEFAULT_RADIUS_KM: Final = 50
 USER_AGENT: Final = "HomeAssistant-ABCEmergency/1.0"
 
-# Configuration keys
+# Configuration keys - Basic
 CONF_STATE: Final = "state"
+CONF_STATES: Final = "states"
 CONF_USE_HOME_LOCATION: Final = "use_home_location"
+
+# Configuration keys - State-wide options
+CONF_ENABLE_STATE_SENSORS: Final = "enable_state_sensors"
+CONF_ENABLE_STATE_GEO: Final = "enable_state_geo"
+
+# Configuration keys - Zone options
+CONF_ZONE_SOURCE: Final = "zone_source"
+CONF_ZONE_NAME: Final = "zone_name"
+CONF_ENABLE_ZONE_SENSORS: Final = "enable_zone_sensors"
+CONF_ENABLE_ZONE_GEO: Final = "enable_zone_geo"
+
+# Zone source options
+ZONE_SOURCE_HOME: Final = "home"
+ZONE_SOURCE_CUSTOM: Final = "custom"
+
+# Configuration keys - Per-type radius
+CONF_RADIUS_BUSHFIRE: Final = "radius_bushfire"
+CONF_RADIUS_EARTHQUAKE: Final = "radius_earthquake"
+CONF_RADIUS_STORM: Final = "radius_storm"
+CONF_RADIUS_FLOOD: Final = "radius_flood"
+CONF_RADIUS_FIRE: Final = "radius_fire"
+CONF_RADIUS_HEAT: Final = "radius_heat"
+CONF_RADIUS_OTHER: Final = "radius_other"
+
+# Default radii (in km)
+DEFAULT_RADIUS_BUSHFIRE: Final = 50
+DEFAULT_RADIUS_EARTHQUAKE: Final = 100
+DEFAULT_RADIUS_STORM: Final = 75
+DEFAULT_RADIUS_FLOOD: Final = 30
+DEFAULT_RADIUS_FIRE: Final = 10
+DEFAULT_RADIUS_HEAT: Final = 100
+DEFAULT_RADIUS_OTHER: Final = 25
+
+# Radius category type
+RadiusCategoryLiteral = Literal["bushfire", "earthquake", "storm", "flood", "fire", "heat", "other"]
+
+# Incident type to radius category mapping
+INCIDENT_TYPE_TO_RADIUS_CATEGORY: Final[dict[str, RadiusCategoryLiteral]] = {
+    # Bushfire category
+    "Bushfire": "bushfire",
+    "Grass Fire": "bushfire",
+    "Fuel Reduction Burn": "bushfire",
+    "Planned Burn": "bushfire",
+    "Burn Off": "bushfire",
+    # Earthquake
+    "Earthquake": "earthquake",
+    # Storm
+    "Storm": "storm",
+    "Thunderstorm": "storm",
+    "Wind": "storm",
+    "Weather": "storm",
+    # Flood
+    "Flood": "flood",
+    # Fire (structure)
+    "Fire": "fire",
+    "Structure Fire": "fire",
+    "Vehicle Fire": "fire",
+    # Heat
+    "Extreme Heat": "heat",
+    "Heatwave": "heat",
+    # Other types default to "other" - handled in code
+}
 
 # Australian states and territories
 STATES: Final[tuple[str, ...]] = ("nsw", "vic", "qld", "sa", "wa", "tas", "nt", "act")
+
+# State display names
+STATE_NAMES: Final[dict[str, str]] = {
+    "nsw": "New South Wales",
+    "vic": "Victoria",
+    "qld": "Queensland",
+    "sa": "South Australia",
+    "wa": "Western Australia",
+    "tas": "Tasmania",
+    "nt": "Northern Territory",
+    "act": "Australian Capital Territory",
+}
 
 # State code literal type
 StateLiteral = Literal["nsw", "vic", "qld", "sa", "wa", "tas", "nt", "act"]

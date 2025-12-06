@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import math
 
+from .const import INCIDENT_TYPE_TO_RADIUS_CATEGORY, RadiusCategoryLiteral
+
 # Earth's radius in kilometers
 EARTH_RADIUS_KM = 6371.0
 
@@ -113,3 +115,18 @@ def bearing_to_direction(bearing: float) -> str:
     index = int((bearing + 22.5) / 45) % 8
 
     return directions[index]
+
+
+def get_radius_category(event_type: str) -> RadiusCategoryLiteral:
+    """Get the radius category for an incident event type.
+
+    Maps incident types from the API to radius categories used for
+    per-type radius configuration.
+
+    Args:
+        event_type: The event type string from the API (e.g., "Bushfire", "Flood").
+
+    Returns:
+        The radius category for this event type.
+    """
+    return INCIDENT_TYPE_TO_RADIUS_CATEGORY.get(event_type, "other")

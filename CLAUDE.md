@@ -125,36 +125,213 @@ The integration enables alerting based on:
 | `binary_sensor.abc_emergency_watch_and_act` | Orange-level or higher warning |
 | `binary_sensor.abc_emergency_advice` | Any warning level active |
 
-## API Reverse Engineering
+## ABC Emergency API Documentation
 
-### Known Information
+### Base URL
 
-- Website: https://www.abc.net.au/emergency
-- The site displays an interactive map with incident markers
-- Data is aggregated from state emergency services
-- Updates appear to be near real-time
+```
+https://www.abc.net.au/emergency-web/api/
+```
 
-### Research Tasks
+### Authentication
 
-1. Inspect network traffic on abc.net.au/emergency
-2. Identify API endpoints for incident data
-3. Document request/response formats
-4. Determine authentication requirements (if any)
-5. Map response fields to Home Assistant entities
+**No authentication required.** The API is publicly accessible.
 
-### Expected Data Fields
+### Endpoints
 
-Based on similar emergency services APIs:
+#### Emergency Search
 
-- Incident ID
-- Incident type (fire, flood, storm, etc.)
-- Location (lat/long, address, region)
-- Warning level (advice, watch and act, emergency warning)
-- Status (active, contained, controlled, etc.)
-- Description/title
-- Last updated timestamp
-- Source agency
-- Affected area (if available)
+```
+GET /emergencySearch
+```
+
+Retrieves emergency incidents for a state/territory.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `state` | string | Yes | State code: `nsw`, `vic`, `qld`, `sa`, `wa`, `tas`, `nt`, `act` |
+| `query` | string | No | Search query text |
+| `radius` | string | No | Search radius: `TenKm`, `TwentyKm`, `FiftyKm`, `OneHundredKm` |
+| `geohashes` | string | No | JSON array of geohash prefixes for location filtering |
+
+**Example Request:**
+
+```bash
+curl 'https://www.abc.net.au/emergency-web/api/emergencySearch?state=nsw' \
+  -H 'User-Agent: Mozilla/5.0'
+```
+
+**Response Structure:**
+
+```json
+{
+  "emergencies": [...],
+  "features": [...],
+  "mapBound": [[lon1, lat1], [lon2, lat2]],
+  "stateName": "nsw",
+  "incidentsNumber": 0,
+  "stateCount": 125
+}
+```
+
+### Response Types
+
+#### Emergency Object
+
+```python
+class EmergencyResponse(TypedDict):
+    id: str  # e.g., "AUREMER-2f9decd05e45ec956293c658d4c94a27"
+    headline: str  # e.g., "Nimbin Rd, Koolewong"
+    to: str  # URL path to warning detail page
+    alertLevelInfoPrepared: AlertLevelInfo
+    emergencyTimestampPrepared: EmergencyTimestamp
+    eventLabelPrepared: EventLabel
+    cardBody: CardBody
+    geometry: Geometry
+```
+
+#### Alert Level Info
+
+```python
+class AlertLevelInfo(TypedDict):
+    text: str      # "Emergency", "Watch and Act", "Advice"
+    level: str     # "extreme", "severe", "moderate", "minor"
+    style: str     # CSS style class
+```
+
+**Alert Level Mapping:**
+
+| API Level | Australian Warning System | Color |
+|-----------|---------------------------|-------|
+| `extreme` | Emergency Warning | Red |
+| `severe` | Watch and Act | Orange |
+| `moderate` | Advice | Yellow |
+| `minor` | Information | Blue/Grey |
+
+#### Event Label
+
+```python
+class EventLabel(TypedDict):
+    icon: str       # "fire", "flood", "storm", "weather", etc.
+    labelText: str  # Human-readable type
+```
+
+**Known Event Types:**
+
+- Bushfire
+- Grass Fire
+- Fire
+- Flood
+- Storm
+- Thunderstorm
+- Wind
+- Heatwave
+- Weather
+- Fire ban
+- Motor Vehicle Accident
+- Sheep Grazier Warning
+- Other Non-Urgent Alerts
+
+#### Card Body
+
+```python
+class CardBody(TypedDict):
+    type: str       # "Bush Fire", "Grass Fire", etc.
+    size: str       # "0 ha", "9052 ha"
+    status: str     # Incident status
+    source: str     # Source agency
+```
+
+**Known Statuses:**
+
+- Being controlled
+- Under Control / Under control
+- Contained
+- Not yet controlled
+- Active
+- Responding
+- Request For Assistance
+- Safe
+- Minor
+- Unknown
+- Actual (for weather warnings)
+
+**Known Sources:**
+
+- NSW Rural Fire Service
+- Fire and Rescue NSW
+- NSW National Parks and Wildlife Service
+- Forestry Corporation of NSW
+- New South Wales State Emergency Service
+- VIC Country Fire Authority
+- Emergency Management Victoria
+- Queensland Fire Department
+- South Australian Country Fire Service
+- Australian Government Bureau of Meteorology
+
+#### Emergency Timestamp
+
+```python
+class EmergencyTimestamp(TypedDict):
+    date: str           # ISO 8601 datetime
+    formattedTime: str  # Human-readable time
+    prefix: str         # "Effective from"
+    updatedTime: str    # ISO 8601 last update time
+```
+
+#### Geometry
+
+```python
+class Geometry(TypedDict):
+    type: str  # "GeometryCollection"
+    crs: CRS
+    geometries: list[PointGeometry | PolygonGeometry]
+
+class PointGeometry(TypedDict):
+    type: Literal["Point"]
+    coordinates: tuple[float, float]  # [longitude, latitude]
+
+class PolygonGeometry(TypedDict):
+    type: Literal["Polygon"]
+    coordinates: list[list[tuple[float, float]]]
+```
+
+### State Codes
+
+| Code | State/Territory |
+|------|-----------------|
+| `nsw` | New South Wales |
+| `vic` | Victoria |
+| `qld` | Queensland |
+| `sa` | South Australia |
+| `wa` | Western Australia |
+| `tas` | Tasmania |
+| `nt` | Northern Territory |
+| `act` | Australian Capital Territory |
+
+### Rate Limiting
+
+No rate limiting has been observed, but the integration should:
+
+- Poll no more frequently than every 5 minutes
+- Include a reasonable User-Agent header
+- Handle HTTP 429 responses gracefully if they occur
+
+### Warning Detail Endpoint
+
+Individual warning details can be fetched from:
+
+```
+GET /emergency/warning/{id}
+```
+
+This returns full warning details including:
+- Full description text
+- Affected areas
+- What to do instructions
+- Update history
 
 ## Project Structure
 
@@ -352,23 +529,43 @@ HOMEASSISTANT_TOKEN=your-long-lived-access-token
 - [Australian Warning System](https://www.australianwarningsystem.com.au/)
 - [GeoLocation Entity Docs](https://developers.home-assistant.io/docs/core/entity/geo-location/)
 
-## Phase 1: API Discovery
+## Development Phases
 
-Before implementing the integration, we need to reverse engineer the ABC Emergency API:
+### Phase 1: API Discovery - COMPLETE
 
-1. **Inspect Network Traffic**
-   - Use browser DevTools on abc.net.au/emergency
-   - Document all API calls made by the page
-   - Note endpoints, methods, headers, and payloads
+The ABC Emergency API has been reverse engineered and documented above. Key findings:
 
-2. **Document API Structure**
-   - Create TypedDict definitions for response structures
-   - Map fields to Home Assistant entity attributes
-   - Identify update patterns and polling requirements
+- **Base URL:** `https://www.abc.net.au/emergency-web/api/`
+- **No authentication required**
+- **State parameter is required** - must specify state code
+- **Rich data available:** coordinates, polygons, alert levels, sources, timestamps
 
-3. **Test API Access**
-   - Verify endpoints are publicly accessible
-   - Check for rate limiting
-   - Test response consistency
+### Phase 2: Core Implementation
 
-This discovery phase should be completed before writing integration code.
+1. **API Client** (`api.py`)
+   - Async HTTP client using aiohttp
+   - State-based fetching
+   - TypedDict response parsing
+   - Error handling and retries
+
+2. **Data Coordinator** (`coordinator.py`)
+   - DataUpdateCoordinator for polling
+   - Configurable update interval (default 5 min)
+   - Distance calculations from home location
+
+3. **Config Flow** (`config_flow.py`)
+   - State selection
+   - Location configuration (use HA home zone or custom)
+   - Alert radius setting
+
+### Phase 3: Entity Platforms
+
+1. **Sensors** - Incident counts, nearest incident distance
+2. **Binary Sensors** - Alert level states
+3. **Geo Location** - Map markers for each incident
+
+### Phase 4: Polish
+
+1. **Diagnostics** - Debug info download
+2. **Translations** - Localization support
+3. **Documentation** - User guide and README

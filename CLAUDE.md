@@ -151,17 +151,31 @@ Retrieves emergency incidents for a state/territory.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `state` | string | Yes | State code: `nsw`, `vic`, `qld`, `sa`, `wa`, `tas`, `nt`, `act` |
+| `state` | string | No* | State code: `nsw`, `vic`, `qld`, `sa`, `wa`, `tas`, `nt`, `act` |
 | `query` | string | No | Search query text |
 | `radius` | string | No | Search radius: `TenKm`, `TwentyKm`, `FiftyKm`, `OneHundredKm` |
-| `geohashes` | string | No | JSON array of geohash prefixes for location filtering |
+| `geohashes` | string | No* | JSON array of geohash prefixes for location filtering |
 
-**Example Request:**
+*Either `state` OR `geohashes` must be provided. Geohash search returns all incidents within the geohash area(s) regardless of state boundaries.
+
+**Example Requests:**
 
 ```bash
+# Search by state
 curl 'https://www.abc.net.au/emergency-web/api/emergencySearch?state=nsw' \
   -H 'User-Agent: Mozilla/5.0'
+
+# Search by geohash (r65 = Sydney area)
+curl 'https://www.abc.net.au/emergency-web/api/emergencySearch?geohashes=%5B%22r65%22%5D' \
+  -H 'User-Agent: Mozilla/5.0'
 ```
+
+**Geohash Reference:**
+
+Geohashes provide location-based filtering. Common Australian prefixes:
+- `r1`, `r3`, `r4`, `r5`, `r6`, `r7` - NSW regions
+- `r65` - Sydney metropolitan area
+- Use multiple geohashes for broader coverage
 
 **Response Structure:**
 
@@ -318,6 +332,104 @@ No rate limiting has been observed, but the integration should:
 - Poll no more frequently than every 5 minutes
 - Include a reasonable User-Agent header
 - Handle HTTP 429 responses gracefully if they occur
+
+### Additional Endpoints
+
+#### Location Search
+
+```
+GET /locationSearch?searchQuery={query}
+```
+
+Search for Australian localities by name. Returns matching suburbs with coordinates.
+
+**Response:**
+
+```python
+class LocationSearchResponse(TypedDict):
+    locations: LocationResults
+
+class LocationResults(TypedDict):
+    byLocalitySearch: list[Location]
+
+class Location(TypedDict):
+    id: str          # "aurora://location/loc46e6625bb24d"
+    suburb: str      # "Sydney"
+    state: State     # {"id": "nsw", "__typename": "State"}
+    postcode: str    # "2000"
+    lat: str         # "-33.8688"
+    long: str        # "151.2093"
+    abcRegion: ABCRegion
+```
+
+**Example:**
+
+```bash
+curl 'https://www.abc.net.au/emergency-web/api/locationSearch?searchQuery=Sydney' \
+  -H 'User-Agent: Mozilla/5.0'
+```
+
+#### Location and Weather
+
+```
+GET /locationAndWeather?query={type}&locationId={id}
+GET /locationAndWeather?query=LOCATION&searchQuery={query}
+```
+
+Retrieve location details and weather forecasts.
+
+**Query Types:**
+
+| Type | Description |
+|------|-------------|
+| `LOCATION` | Search for location by name (use `searchQuery` param) |
+| `WEATHER` | Get weather for location (use `locationId` param) |
+
+**Weather Response:**
+
+```python
+class WeatherForecast(TypedDict):
+    dailyRainfallRange: str      # "0 mm", "0 to 1 mm"
+    dayName: str                 # "Saturday"
+    expectedWeatherDescription: str  # "Cloudy", "Possible shower"
+    expectedWindDirection: str   # "NE", "SE"
+    expectedWindSpeedKph: int    # 17
+    icon: str                    # "Cloud", "LightShower", "PartCloudy"
+    maximumTemperature: int      # 39
+    minimumTemperature: int      # 23
+    rainfallProbability: int     # 20
+    startTime: str               # "2025-12-06 00:00:00"
+    uvDescription: str           # "Extreme", "High"
+    uvIndex: int                 # 11
+
+class CurrentConditions(TypedDict):
+    feelsLikeTempC: float        # 26.8
+    generationTime: str          # ISO 8601
+    relativeHumidityPct: int     # 40
+    startTime: str               # ISO 8601
+    tempC: float                 # 30.4
+```
+
+**Example:**
+
+```bash
+# Get weather for Sydney
+curl 'https://www.abc.net.au/emergency-web/api/locationAndWeather?query=WEATHER&locationId=aurora://location/loc46e6625bb24d' \
+  -H 'User-Agent: Mozilla/5.0'
+```
+
+#### Disclaimer Content
+
+```
+GET /disclaimerContent?state={state}
+```
+
+Returns disclaimer and emergency services information for a state.
+
+**Response includes:**
+- Disclaimer text about data accuracy
+- Emergency services contact information
+- Links to official agencies
 
 ### Warning Detail Endpoint
 

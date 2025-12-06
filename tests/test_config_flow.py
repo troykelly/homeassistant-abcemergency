@@ -12,10 +12,9 @@ from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.abcemergency.const import (
-    CONF_ENABLE_STATE_GEO,
-    CONF_ENABLE_STATE_SENSORS,
-    CONF_ENABLE_ZONE_GEO,
-    CONF_ENABLE_ZONE_SENSORS,
+    CONF_INSTANCE_TYPE,
+    CONF_PERSON_ENTITY_ID,
+    CONF_PERSON_NAME,
     CONF_RADIUS_BUSHFIRE,
     CONF_RADIUS_EARTHQUAKE,
     CONF_RADIUS_FIRE,
@@ -23,9 +22,8 @@ from custom_components.abcemergency.const import (
     CONF_RADIUS_HEAT,
     CONF_RADIUS_OTHER,
     CONF_RADIUS_STORM,
-    CONF_STATES,
+    CONF_STATE,
     CONF_ZONE_NAME,
-    CONF_ZONE_SOURCE,
     DEFAULT_RADIUS_BUSHFIRE,
     DEFAULT_RADIUS_EARTHQUAKE,
     DEFAULT_RADIUS_FIRE,
@@ -34,8 +32,9 @@ from custom_components.abcemergency.const import (
     DEFAULT_RADIUS_OTHER,
     DEFAULT_RADIUS_STORM,
     DOMAIN,
-    ZONE_SOURCE_CUSTOM,
-    ZONE_SOURCE_HOME,
+    INSTANCE_TYPE_PERSON,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
 )
 from custom_components.abcemergency.exceptions import (
     ABCEmergencyAPIError,
@@ -84,7 +83,7 @@ def mock_api_client() -> AsyncMock:
 
 
 class TestConfigFlowUserStep:
-    """Test the user step of config flow."""
+    """Test the user step of config flow (instance type selection)."""
 
     async def test_form_is_shown(self, hass: HomeAssistant) -> None:
         """Test that the form is shown on first load."""
@@ -94,61 +93,88 @@ class TestConfigFlowUserStep:
 
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "user"
-        assert result["errors"] == {}
 
-    async def test_state_selection_proceeds_to_state_options(
+    async def test_selecting_state_proceeds_to_state_step(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test selecting state instance type proceeds to state step."""
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "state"
+
+    async def test_selecting_zone_proceeds_to_zone_name_step(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test selecting zone instance type proceeds to zone_name step."""
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "zone_name"
+
+    async def test_selecting_person_proceeds_to_person_step(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test selecting person instance type proceeds to person step."""
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "person"
+
+
+class TestConfigFlowStateStep:
+    """Test the state step of config flow."""
+
+    async def test_state_selection_creates_entry(
         self,
         hass: HomeAssistant,
         mock_api_client: AsyncMock,
+        mock_setup_entry: AsyncMock,
     ) -> None:
-        """Test selecting states proceeds to state_options step."""
+        """Test selecting a state creates an entry."""
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
         )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "state_options"
-
-    async def test_multi_state_selection(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-    ) -> None:
-        """Test selecting multiple states proceeds to state_options step."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
+        assert result["step_id"] == "state"
 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw", "vic", "qld"]},
+            {CONF_STATE: "nsw"},
         )
 
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "state_options"
-
-    async def test_no_states_selected_shows_error(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test that selecting no states shows an error."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: []},
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "user"
-        assert result["errors"] == {"base": "no_states_selected"}
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["title"] == "ABC Emergency (New South Wales)"
+        assert result["data"][CONF_INSTANCE_TYPE] == INSTANCE_TYPE_STATE
+        assert result["data"][CONF_STATE] == "nsw"
 
     async def test_connection_error_shows_error(
         self,
@@ -164,10 +190,14 @@ class TestConfigFlowUserStep:
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
+            )
 
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATES: ["nsw"]},
+                {CONF_STATE: "nsw"},
             )
 
             assert result["type"] is FlowResultType.FORM
@@ -187,10 +217,14 @@ class TestConfigFlowUserStep:
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
+            )
 
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATES: ["vic"]},
+                {CONF_STATE: "vic"},
             )
 
             assert result["type"] is FlowResultType.FORM
@@ -210,225 +244,65 @@ class TestConfigFlowUserStep:
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
+            )
 
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATES: ["qld"]},
+                {CONF_STATE: "qld"},
             )
 
             assert result["type"] is FlowResultType.FORM
             assert result["errors"] == {"base": "unknown"}
 
-
-class TestConfigFlowStateOptionsStep:
-    """Test the state_options step of config flow."""
-
-    async def test_state_options_proceeds_to_zone(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-    ) -> None:
-        """Test state options step proceeds to zone step."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-        assert result["step_id"] == "state_options"
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ENABLE_STATE_SENSORS: True,
-                CONF_ENABLE_STATE_GEO: False,
-            },
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone"
-
-    async def test_state_options_defaults(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-    ) -> None:
-        """Test state options with default values."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},  # Use defaults
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone"
-
-
-class TestConfigFlowZoneStep:
-    """Test the zone step of config flow."""
-
-    async def test_zone_home_proceeds_to_zone_radius(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-    ) -> None:
-        """Test zone step with home location proceeds to zone_radius."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ENABLE_STATE_SENSORS: True, CONF_ENABLE_STATE_GEO: True},
-        )
-        assert result["step_id"] == "zone"
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone_radius"
-
-    async def test_zone_custom_location(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-    ) -> None:
-        """Test zone step with custom location."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["vic"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ENABLE_STATE_SENSORS: True, CONF_ENABLE_STATE_GEO: True},
-        )
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_ZONE_SOURCE: ZONE_SOURCE_CUSTOM,
-                CONF_ZONE_NAME: "Melbourne",
-                "location": {
-                    "latitude": -37.8136,
-                    "longitude": 144.9631,
-                },
-            },
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone_radius"
-
-
-class TestConfigFlowZoneRadiusStep:
-    """Test the zone_radius step of config flow."""
-
-    async def test_zone_radius_proceeds_to_zone_options(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-    ) -> None:
-        """Test zone_radius step proceeds to zone_options."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-        assert result["step_id"] == "zone_radius"
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_RADIUS_BUSHFIRE: 60,
-                CONF_RADIUS_EARTHQUAKE: 120,
-                CONF_RADIUS_STORM: 80,
-                CONF_RADIUS_FLOOD: 40,
-                CONF_RADIUS_FIRE: 15,
-                CONF_RADIUS_HEAT: 110,
-                CONF_RADIUS_OTHER: 30,
-            },
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone_options"
-
-    async def test_zone_radius_defaults(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-    ) -> None:
-        """Test zone_radius step with default values."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-
-        # Use defaults by providing empty dict (form has required fields with defaults)
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone_options"
-
-
-class TestConfigFlowZoneOptionsStep:
-    """Test the zone_options step of config flow."""
-
-    async def test_complete_flow_with_home_location(
+    async def test_duplicate_state_aborts(
         self,
         hass: HomeAssistant,
         mock_api_client: AsyncMock,
         mock_setup_entry: AsyncMock,
     ) -> None:
-        """Test complete flow using home location."""
+        """Test that configuring same state twice aborts."""
+        # Complete first entry
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_STATE: "nsw"},
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+
+        # Try to configure same state again
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_STATE: "nsw"},
+        )
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "already_configured"
+
+
+class TestConfigFlowZoneSteps:
+    """Test the zone configuration flow."""
+
+    async def test_zone_name_step_proceeds_to_radius(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test zone_name step proceeds to zone_radius."""
         hass.config.latitude = -33.8688
         hass.config.longitude = 151.2093
 
@@ -437,36 +311,55 @@ class TestConfigFlowZoneOptionsStep:
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
+        )
+        assert result["step_id"] == "zone_name"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_ZONE_NAME: "Home",
+                "location": {"latitude": -33.8688, "longitude": 151.2093},
+            },
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "zone_radius"
+
+    async def test_zone_flow_creates_entry(
+        self,
+        hass: HomeAssistant,
+        mock_setup_entry: AsyncMock,
+    ) -> None:
+        """Test complete zone flow creates entry."""
+        hass.config.latitude = -33.8688
+        hass.config.longitude = 151.2093
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_ENABLE_STATE_SENSORS: True, CONF_ENABLE_STATE_GEO: True},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
+            {
+                CONF_ZONE_NAME: "Home",
+                "location": {"latitude": -33.8688, "longitude": 151.2093},
+            },
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {},  # Use default radii
         )
-        assert result["step_id"] == "zone_options"
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ENABLE_ZONE_SENSORS: True, CONF_ENABLE_ZONE_GEO: True},
-        )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["title"] == "ABC Emergency (New South Wales)"
-        assert result["data"][CONF_STATES] == ["nsw"]
+        assert result["title"] == "ABC Emergency (Home)"
+        assert result["data"][CONF_INSTANCE_TYPE] == INSTANCE_TYPE_ZONE
+        assert result["data"][CONF_ZONE_NAME] == "Home"
         assert result["data"][CONF_LATITUDE] == -33.8688
         assert result["data"][CONF_LONGITUDE] == 151.2093
-        assert result["data"][CONF_ENABLE_STATE_SENSORS] is True
-        assert result["data"][CONF_ENABLE_STATE_GEO] is True
-        assert result["data"][CONF_ENABLE_ZONE_SENSORS] is True
-        assert result["data"][CONF_ENABLE_ZONE_GEO] is True
         assert result["data"][CONF_RADIUS_BUSHFIRE] == DEFAULT_RADIUS_BUSHFIRE
         assert result["data"][CONF_RADIUS_EARTHQUAKE] == DEFAULT_RADIUS_EARTHQUAKE
         assert result["data"][CONF_RADIUS_STORM] == DEFAULT_RADIUS_STORM
@@ -475,29 +368,26 @@ class TestConfigFlowZoneOptionsStep:
         assert result["data"][CONF_RADIUS_HEAT] == DEFAULT_RADIUS_HEAT
         assert result["data"][CONF_RADIUS_OTHER] == DEFAULT_RADIUS_OTHER
 
-    async def test_complete_flow_with_custom_location(
+    async def test_zone_custom_radii(
         self,
         hass: HomeAssistant,
-        mock_api_client: AsyncMock,
         mock_setup_entry: AsyncMock,
     ) -> None:
-        """Test complete flow using custom location."""
+        """Test zone flow with custom radii."""
+        hass.config.latitude = -33.8688
+        hass.config.longitude = 151.2093
+
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["vic"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ENABLE_STATE_SENSORS: False, CONF_ENABLE_STATE_GEO: True},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {
-                CONF_ZONE_SOURCE: ZONE_SOURCE_CUSTOM,
-                CONF_ZONE_NAME: "Melbourne",
+                CONF_ZONE_NAME: "Office",
                 "location": {"latitude": -37.8136, "longitude": 144.9631},
             },
         )
@@ -513,128 +403,34 @@ class TestConfigFlowZoneOptionsStep:
                 CONF_RADIUS_OTHER: 40,
             },
         )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ENABLE_ZONE_SENSORS: True, CONF_ENABLE_ZONE_GEO: False},
-        )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["title"] == "ABC Emergency (Victoria)"
-        assert result["data"][CONF_LATITUDE] == -37.8136
-        assert result["data"][CONF_LONGITUDE] == 144.9631
-        assert result["data"][CONF_ZONE_NAME] == "Melbourne"
-        assert result["data"][CONF_ENABLE_STATE_SENSORS] is False
-        assert result["data"][CONF_ENABLE_ZONE_GEO] is False
+        assert result["data"][CONF_RADIUS_BUSHFIRE] == 100
+        assert result["data"][CONF_RADIUS_EARTHQUAKE] == 150
 
-    async def test_complete_flow_with_multiple_states(
+    async def test_duplicate_zone_name_aborts(
         self,
         hass: HomeAssistant,
-        mock_api_client: AsyncMock,
         mock_setup_entry: AsyncMock,
     ) -> None:
-        """Test complete flow with multiple states selected."""
+        """Test that configuring same zone name twice aborts."""
         hass.config.latitude = -33.8688
         hass.config.longitude = 151.2093
 
+        # Complete first zone entry
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw", "vic", "qld"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-
-        assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert "New South Wales" in result["title"]
-        assert "Victoria" in result["title"]
-        assert "Queensland" in result["title"]
-
-    async def test_complete_flow_with_many_states(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-        mock_setup_entry: AsyncMock,
-    ) -> None:
-        """Test complete flow with more than 3 states shows count."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw", "vic", "qld", "sa"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-
-        assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["title"] == "ABC Emergency (4 states)"
-
-
-class TestConfigFlowDuplicates:
-    """Test duplicate entry handling."""
-
-    async def test_duplicate_states_aborts(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-        mock_setup_entry: AsyncMock,
-    ) -> None:
-        """Test that configuring same states twice aborts."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        # Complete first entry
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
+            {
+                CONF_ZONE_NAME: "Home",
+                "location": {"latitude": -33.8688, "longitude": 151.2093},
+            },
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -642,47 +438,145 @@ class TestConfigFlowDuplicates:
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY
 
-        # Try to configure same states again
+        # Try to configure same zone name again
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_ZONE_NAME: "Home",
+                "location": {"latitude": -34.0, "longitude": 151.0},
+            },
         )
 
         assert result["type"] is FlowResultType.ABORT
         assert result["reason"] == "already_configured"
 
-    async def test_different_states_allowed(
+
+class TestConfigFlowPersonSteps:
+    """Test the person configuration flow."""
+
+    async def test_person_step_requires_entity(
         self,
         hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-        mock_setup_entry: AsyncMock,
     ) -> None:
-        """Test that different states can be configured."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        # Configure NSW
+        """Test person step shows form."""
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "person"
+
+    async def test_person_flow_creates_entry(
+        self,
+        hass: HomeAssistant,
+        mock_setup_entry: AsyncMock,
+    ) -> None:
+        """Test complete person flow creates entry."""
+        # Create a mock person entity
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"friendly_name": "John", "latitude": -33.8688, "longitude": 151.2093},
+        )
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
+            {CONF_PERSON_ENTITY_ID: "person.john"},
+        )
+        assert result["step_id"] == "person_radius"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {},  # Use default radii
+        )
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["title"] == "ABC Emergency (John)"
+        assert result["data"][CONF_INSTANCE_TYPE] == INSTANCE_TYPE_PERSON
+        assert result["data"][CONF_PERSON_ENTITY_ID] == "person.john"
+        assert result["data"][CONF_PERSON_NAME] == "John"
+        assert result["data"][CONF_RADIUS_BUSHFIRE] == DEFAULT_RADIUS_BUSHFIRE
+
+    async def test_person_custom_radii(
+        self,
+        hass: HomeAssistant,
+        mock_setup_entry: AsyncMock,
+    ) -> None:
+        """Test person flow with custom radii."""
+        hass.states.async_set(
+            "person.jane",
+            "home",
+            {"friendly_name": "Jane", "latitude": -33.8688, "longitude": 151.2093},
+        )
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_PERSON_ENTITY_ID: "person.jane"},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_RADIUS_BUSHFIRE: 80,
+                CONF_RADIUS_EARTHQUAKE: 120,
+                CONF_RADIUS_STORM: 90,
+                CONF_RADIUS_FLOOD: 40,
+                CONF_RADIUS_FIRE: 15,
+                CONF_RADIUS_HEAT: 110,
+                CONF_RADIUS_OTHER: 35,
+            },
+        )
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_RADIUS_BUSHFIRE] == 80
+
+    async def test_duplicate_person_aborts(
+        self,
+        hass: HomeAssistant,
+        mock_setup_entry: AsyncMock,
+    ) -> None:
+        """Test that configuring same person twice aborts."""
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"friendly_name": "John", "latitude": -33.8688, "longitude": 151.2093},
+        )
+
+        # Complete first person entry
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_PERSON_ENTITY_ID: "person.john"},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -690,50 +584,78 @@ class TestConfigFlowDuplicates:
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY
 
-        # Configure VIC (should succeed)
+        # Try to configure same person again
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["vic"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
         )
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "state_options"
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_PERSON_ENTITY_ID: "person.john"},
+        )
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "already_configured"
 
 
 class TestOptionsFlow:
     """Test options flow."""
 
-    async def test_options_flow_shows_menu(
+    async def test_options_flow_aborts_for_state(
         self,
         hass: HomeAssistant,
         mock_api_client: AsyncMock,
         mock_setup_entry: AsyncMock,
     ) -> None:
-        """Test options flow shows menu."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        # Create config entry first
+        """Test options flow aborts for state instances."""
+        # Create state entry
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {},
+            {CONF_STATE: "nsw"},
+        )
+
+        # Get the config entry
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+
+        # Start options flow
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "no_options_state"
+
+    async def test_options_flow_for_zone(
+        self,
+        hass: HomeAssistant,
+        mock_setup_entry: AsyncMock,
+    ) -> None:
+        """Test options flow for zone instances."""
+        hass.config.latitude = -33.8688
+        hass.config.longitude = 151.2093
+
+        # Create zone entry
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {},
+            {
+                CONF_ZONE_NAME: "Home",
+                "location": {"latitude": -33.8688, "longitude": 151.2093},
+            },
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -746,112 +668,8 @@ class TestOptionsFlow:
         # Start options flow
         result = await hass.config_entries.options.async_init(entry.entry_id)
 
-        assert result["type"] is FlowResultType.MENU
-        assert result["step_id"] == "init"
-
-    async def test_options_flow_state_options(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-        mock_setup_entry: AsyncMock,
-    ) -> None:
-        """Test updating state options via options flow."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        # Create config entry
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-
-        entry = hass.config_entries.async_entries(DOMAIN)[0]
-
-        # Navigate to state_options
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"],
-            {"next_step_id": "state_options"},
-        )
-
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "state_options"
-
-        # Update options
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"],
-            {CONF_ENABLE_STATE_SENSORS: False, CONF_ENABLE_STATE_GEO: True},
-        )
-
-        assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_ENABLE_STATE_SENSORS] is False
-        assert result["data"][CONF_ENABLE_STATE_GEO] is True
-
-    async def test_options_flow_zone_radius(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: AsyncMock,
-        mock_setup_entry: AsyncMock,
-    ) -> None:
-        """Test updating zone radius via options flow."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
-
-        # Create config entry
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_STATES: ["nsw"]},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-
-        entry = hass.config_entries.async_entries(DOMAIN)[0]
-
-        # Navigate to zone_radius
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"],
-            {"next_step_id": "zone_radius"},
-        )
-
-        assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone_radius"
+        assert result["step_id"] == "radius"
 
         # Update radius values
         result = await hass.config_entries.options.async_configure(
@@ -871,59 +689,57 @@ class TestOptionsFlow:
         assert result["data"][CONF_RADIUS_BUSHFIRE] == 100
         assert result["data"][CONF_RADIUS_EARTHQUAKE] == 200
 
-    async def test_options_flow_zone_options(
+    async def test_options_flow_for_person(
         self,
         hass: HomeAssistant,
-        mock_api_client: AsyncMock,
         mock_setup_entry: AsyncMock,
     ) -> None:
-        """Test updating zone options via options flow."""
-        hass.config.latitude = -33.8688
-        hass.config.longitude = 151.2093
+        """Test options flow for person instances."""
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"friendly_name": "John", "latitude": -33.8688, "longitude": 151.2093},
+        )
 
-        # Create config entry
+        # Create person entry
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_STATES: ["nsw"]},
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ZONE_SOURCE: ZONE_SOURCE_HOME},
-        )
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
+            {CONF_PERSON_ENTITY_ID: "person.john"},
         )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {},
         )
 
+        # Get the config entry
         entry = hass.config_entries.async_entries(DOMAIN)[0]
 
-        # Navigate to zone_options
+        # Start options flow
         result = await hass.config_entries.options.async_init(entry.entry_id)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"],
-            {"next_step_id": "zone_options"},
-        )
 
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "zone_options"
+        assert result["step_id"] == "radius"
 
-        # Update options
+        # Update radius values
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
-            {CONF_ENABLE_ZONE_SENSORS: False, CONF_ENABLE_ZONE_GEO: False},
+            {
+                CONF_RADIUS_BUSHFIRE: 75,
+                CONF_RADIUS_EARTHQUAKE: 125,
+                CONF_RADIUS_STORM: 80,
+                CONF_RADIUS_FLOOD: 35,
+                CONF_RADIUS_FIRE: 12,
+                CONF_RADIUS_HEAT: 90,
+                CONF_RADIUS_OTHER: 30,
+            },
         )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_ENABLE_ZONE_SENSORS] is False
-        assert result["data"][CONF_ENABLE_ZONE_GEO] is False
+        assert result["data"][CONF_RADIUS_BUSHFIRE] == 75

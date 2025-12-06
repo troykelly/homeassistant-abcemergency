@@ -7,9 +7,36 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.abcemergency.const import AlertLevel
+from custom_components.abcemergency.const import (
+    CONF_INSTANCE_TYPE,
+    CONF_PERSON_ENTITY_ID,
+    CONF_PERSON_NAME,
+    CONF_RADIUS_BUSHFIRE,
+    CONF_RADIUS_EARTHQUAKE,
+    CONF_RADIUS_FIRE,
+    CONF_RADIUS_FLOOD,
+    CONF_RADIUS_HEAT,
+    CONF_RADIUS_OTHER,
+    CONF_RADIUS_STORM,
+    CONF_STATE,
+    CONF_ZONE_NAME,
+    DEFAULT_RADIUS_BUSHFIRE,
+    DEFAULT_RADIUS_EARTHQUAKE,
+    DEFAULT_RADIUS_FIRE,
+    DEFAULT_RADIUS_FLOOD,
+    DEFAULT_RADIUS_HEAT,
+    DEFAULT_RADIUS_OTHER,
+    DEFAULT_RADIUS_STORM,
+    DOMAIN,
+    INSTANCE_TYPE_PERSON,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
+    AlertLevel,
+)
 from custom_components.abcemergency.coordinator import ABCEmergencyCoordinator
 from custom_components.abcemergency.exceptions import (
     ABCEmergencyAPIError,
@@ -25,6 +52,62 @@ if TYPE_CHECKING:
 def mock_client() -> MagicMock:
     """Create a mock API client."""
     return MagicMock()
+
+
+@pytest.fixture
+def mock_config_entry_state() -> MockConfigEntry:
+    """Create a mock config entry for state mode."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
+            CONF_STATE: "nsw",
+        },
+        unique_id="abc_emergency_state_nsw",
+    )
+
+
+@pytest.fixture
+def mock_config_entry_zone() -> MockConfigEntry:
+    """Create a mock config entry for zone mode."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+            CONF_ZONE_NAME: "Home",
+            CONF_LATITUDE: -33.8688,
+            CONF_LONGITUDE: 151.2093,
+            CONF_RADIUS_BUSHFIRE: DEFAULT_RADIUS_BUSHFIRE,
+            CONF_RADIUS_EARTHQUAKE: DEFAULT_RADIUS_EARTHQUAKE,
+            CONF_RADIUS_STORM: DEFAULT_RADIUS_STORM,
+            CONF_RADIUS_FLOOD: DEFAULT_RADIUS_FLOOD,
+            CONF_RADIUS_FIRE: DEFAULT_RADIUS_FIRE,
+            CONF_RADIUS_HEAT: DEFAULT_RADIUS_HEAT,
+            CONF_RADIUS_OTHER: DEFAULT_RADIUS_OTHER,
+        },
+        unique_id="abc_emergency_zone_home",
+    )
+
+
+@pytest.fixture
+def mock_config_entry_person() -> MockConfigEntry:
+    """Create a mock config entry for person mode."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON,
+            CONF_PERSON_ENTITY_ID: "person.john",
+            CONF_PERSON_NAME: "John",
+            CONF_RADIUS_BUSHFIRE: DEFAULT_RADIUS_BUSHFIRE,
+            CONF_RADIUS_EARTHQUAKE: DEFAULT_RADIUS_EARTHQUAKE,
+            CONF_RADIUS_STORM: DEFAULT_RADIUS_STORM,
+            CONF_RADIUS_FLOOD: DEFAULT_RADIUS_FLOOD,
+            CONF_RADIUS_FIRE: DEFAULT_RADIUS_FIRE,
+            CONF_RADIUS_HEAT: DEFAULT_RADIUS_HEAT,
+            CONF_RADIUS_OTHER: DEFAULT_RADIUS_OTHER,
+        },
+        unique_id="abc_emergency_person_john",
+    )
 
 
 @pytest.fixture
@@ -165,93 +248,151 @@ def empty_api_response() -> dict:
     }
 
 
-class TestCoordinatorInit:
-    """Test coordinator initialization."""
+class TestCoordinatorInitState:
+    """Test coordinator initialization for state mode."""
 
-    def test_init_stores_configuration(self, hass: HomeAssistant, mock_client: MagicMock) -> None:
-        """Test coordinator stores configuration correctly."""
+    def test_init_stores_state_configuration(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test coordinator stores state configuration correctly."""
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=50,
         )
 
+        assert coordinator._instance_type == INSTANCE_TYPE_STATE
         assert coordinator._state == "nsw"
-        assert coordinator._latitude == -33.8688
-        assert coordinator._longitude == 151.2093
-        assert coordinator._radius_km == 50
+        assert coordinator._latitude is None
+        assert coordinator._longitude is None
 
-    def test_init_sets_update_interval(self, hass: HomeAssistant, mock_client: MagicMock) -> None:
+    def test_init_sets_update_interval(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
         """Test coordinator sets correct update interval."""
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=50,
         )
 
         assert coordinator.update_interval == timedelta(seconds=300)
 
 
-class TestCoordinatorUpdate:
-    """Test coordinator update functionality."""
+class TestCoordinatorInitZone:
+    """Test coordinator initialization for zone mode."""
 
-    async def test_successful_update(
+    def test_init_stores_zone_configuration(
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test coordinator stores zone configuration correctly."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        assert coordinator._instance_type == INSTANCE_TYPE_ZONE
+        assert coordinator._latitude == -33.8688
+        assert coordinator._longitude == 151.2093
+        assert coordinator._state is None
+
+
+class TestCoordinatorInitPerson:
+    """Test coordinator initialization for person mode."""
+
+    def test_init_stores_person_configuration(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+    ) -> None:
+        """Test coordinator stores person configuration correctly."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
+        )
+
+        assert coordinator._instance_type == INSTANCE_TYPE_PERSON
+        assert coordinator._person_entity_id == "person.john"
+
+
+class TestCoordinatorUpdateStateMode:
+    """Test coordinator update functionality for state mode."""
+
+    async def test_successful_update_state_mode(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
-        """Test successful data update."""
+        """Test successful data update for state mode."""
         mock_client.async_get_emergencies_by_state = AsyncMock(return_value=sample_api_response)
 
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=50,
         )
 
         data = await coordinator._async_update_data()
 
         assert isinstance(data, CoordinatorData)
         assert data.total_count == 3
+        assert data.instance_type == INSTANCE_TYPE_STATE
+        assert data.nearby_count is None  # Not applicable for state mode
         mock_client.async_get_emergencies_by_state.assert_called_once_with("nsw")
 
-    async def test_empty_response(
+    async def test_empty_response_state_mode(
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
         empty_api_response: dict,
     ) -> None:
-        """Test handling of empty response."""
+        """Test handling of empty response in state mode."""
         mock_client.async_get_emergencies_by_state = AsyncMock(return_value=empty_api_response)
 
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=50,
         )
 
         data = await coordinator._async_update_data()
 
         assert data.total_count == 0
         assert data.incidents == []
-        assert data.nearby_count == 0
-        assert data.nearest_incident is None
 
     async def test_connection_error_raises_update_failed(
-        self, hass: HomeAssistant, mock_client: MagicMock
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
     ) -> None:
         """Test connection error raises UpdateFailed."""
         mock_client.async_get_emergencies_by_state = AsyncMock(
@@ -261,17 +402,19 @@ class TestCoordinatorUpdate:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=50,
         )
 
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
 
     async def test_api_error_raises_update_failed(
-        self, hass: HomeAssistant, mock_client: MagicMock
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
     ) -> None:
         """Test API error raises UpdateFailed."""
         mock_client.async_get_emergencies_by_state = AsyncMock(
@@ -281,23 +424,49 @@ class TestCoordinatorUpdate:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=50,
         )
 
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
 
 
-class TestIncidentProcessing:
-    """Test incident data processing."""
+class TestCoordinatorUpdateZoneMode:
+    """Test coordinator update functionality for zone mode."""
+
+    async def test_successful_update_zone_mode(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        sample_api_response: dict,
+    ) -> None:
+        """Test successful data update for zone mode."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=sample_api_response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert isinstance(data, CoordinatorData)
+        assert data.total_count == 3
+        assert data.instance_type == INSTANCE_TYPE_ZONE
+        assert data.nearby_count is not None
 
     async def test_incidents_have_calculated_distances(
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
         """Test incidents have distance from configured location."""
@@ -306,10 +475,10 @@ class TestIncidentProcessing:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
-            state="nsw",
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
             latitude=-33.8688,
             longitude=151.2093,
-            radius_km=50,
         )
 
         data = await coordinator._async_update_data()
@@ -322,6 +491,7 @@ class TestIncidentProcessing:
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
         """Test incidents have bearing calculated."""
@@ -330,10 +500,10 @@ class TestIncidentProcessing:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
-            state="nsw",
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
             latitude=-33.8688,
             longitude=151.2093,
-            radius_km=50,
         )
 
         data = await coordinator._async_update_data()
@@ -348,6 +518,7 @@ class TestIncidentProcessing:
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
         """Test incidents are sorted by distance (nearest first)."""
@@ -356,10 +527,10 @@ class TestIncidentProcessing:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
-            state="nsw",
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
             latitude=-33.8688,
             longitude=151.2093,
-            radius_km=50,
         )
 
         data = await coordinator._async_update_data()
@@ -372,6 +543,7 @@ class TestIncidentProcessing:
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
         """Test nearest incident is correctly identified."""
@@ -380,10 +552,10 @@ class TestIncidentProcessing:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
-            state="nsw",
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
             latitude=-33.8688,
             longitude=151.2093,
-            radius_km=500,  # Large radius to include all
         )
 
         data = await coordinator._async_update_data()
@@ -393,54 +565,80 @@ class TestIncidentProcessing:
         assert data.nearest_distance_km == data.incidents[0].distance_km
 
 
-class TestNearbyFiltering:
-    """Test nearby incident filtering."""
+class TestCoordinatorUpdatePersonMode:
+    """Test coordinator update functionality for person mode."""
 
-    async def test_nearby_count_correct(
+    async def test_successful_update_person_mode(
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
-        """Test nearby count reflects incidents within radius."""
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=sample_api_response)
-
-        # First incident is ~20km away, second is ~100km, third is ~400km
-        # With 50km radius, only first should be nearby
-        coordinator = ABCEmergencyCoordinator(
-            hass,
-            mock_client,
-            state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=50,
+        """Test successful data update for person mode."""
+        # Set up person entity with location
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"latitude": -33.8688, "longitude": 151.2093},
         )
 
-        data = await coordinator._async_update_data()
-
-        assert data.nearby_count == 1
-
-    async def test_large_radius_includes_all(
-        self,
-        hass: HomeAssistant,
-        mock_client: MagicMock,
-        sample_api_response: dict,
-    ) -> None:
-        """Test large radius includes all incidents."""
         mock_client.async_get_emergencies_by_state = AsyncMock(return_value=sample_api_response)
 
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
-            state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=500,  # Large enough for all
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
         )
 
         data = await coordinator._async_update_data()
 
-        assert data.nearby_count == 3
+        assert isinstance(data, CoordinatorData)
+        assert data.instance_type == INSTANCE_TYPE_PERSON
+        assert data.location_available is True
+
+    async def test_person_no_location_returns_empty(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+    ) -> None:
+        """Test person mode with no location returns empty data."""
+        # Set up person entity without location
+        hass.states.async_set("person.john", "unknown", {})
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.total_count == 0
+        assert data.location_available is False
+
+    async def test_person_entity_not_found_raises_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+    ) -> None:
+        """Test person entity not found raises UpdateFailed."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.nonexistent",
+        )
+
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
 
 
 class TestAlertLevelAggregation:
@@ -450,46 +648,67 @@ class TestAlertLevelAggregation:
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
         """Test highest alert level is extreme when present in nearby."""
         mock_client.async_get_emergencies_by_state = AsyncMock(return_value=sample_api_response)
 
-        # Use radius that includes the extreme-level incident
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
-            state="nsw",
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
             latitude=-33.8688,
             longitude=151.2093,
-            radius_km=50,
         )
 
         data = await coordinator._async_update_data()
 
+        # The first incident (extreme level) is nearby (~20km)
         assert data.highest_alert_level == AlertLevel.EMERGENCY
 
     async def test_highest_alert_level_empty_when_no_nearby(
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
         """Test highest alert level is empty when no nearby incidents."""
         mock_client.async_get_emergencies_by_state = AsyncMock(return_value=sample_api_response)
 
-        # Very small radius - no incidents nearby
+        # Create entry with very small radius
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+                CONF_RADIUS_BUSHFIRE: 1,  # 1km - too small
+                CONF_RADIUS_EARTHQUAKE: 1,
+                CONF_RADIUS_STORM: 1,
+                CONF_RADIUS_FLOOD: 1,
+                CONF_RADIUS_FIRE: 1,
+                CONF_RADIUS_HEAT: 1,
+                CONF_RADIUS_OTHER: 1,
+            },
+            unique_id="abc_emergency_zone_test",
+        )
+
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
-            state="nsw",
+            entry,
+            instance_type=INSTANCE_TYPE_ZONE,
             latitude=-33.8688,
             longitude=151.2093,
-            radius_km=1,
         )
 
         data = await coordinator._async_update_data()
 
+        # With 1km radius, no incidents should be nearby
         assert data.highest_alert_level == ""
 
 
@@ -500,6 +719,7 @@ class TestIncidentsByType:
         self,
         hass: HomeAssistant,
         mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
         sample_api_response: dict,
     ) -> None:
         """Test incidents are correctly grouped by type."""
@@ -508,10 +728,9 @@ class TestIncidentsByType:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.8688,
-            longitude=151.2093,
-            radius_km=500,  # Include all
         )
 
         data = await coordinator._async_update_data()
@@ -522,11 +741,14 @@ class TestIncidentsByType:
         assert data.incidents_by_type["Storm"] == 1
 
 
-class TestBOMWarningsWithMultiPolygon:
-    """Test handling of BOM warnings with MultiPolygon geometry."""
+class TestGeometryExtraction:
+    """Test geometry extraction edge cases."""
 
     async def test_multipolygon_geometry_extracts_centroid(
-        self, hass: HomeAssistant, mock_client: MagicMock
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
     ) -> None:
         """Test MultiPolygon geometry uses centroid for location."""
         bom_response = {
@@ -588,90 +810,26 @@ class TestBOMWarningsWithMultiPolygon:
         coordinator = ABCEmergencyCoordinator(
             hass,
             mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
             state="nsw",
-            latitude=-33.5,
-            longitude=150.5,
-            radius_km=100,
         )
 
         data = await coordinator._async_update_data()
 
         assert len(data.incidents) == 1
         incident = data.incidents[0]
-        # Centroid of the polygon vertices (average of 5 points including repeat)
-        # The polygon has vertices: (-33, 150), (-33, 151), (-34, 151), (-34, 150), (-33, 150)
-        # Average lat = (-33 -33 -34 -34 -33) / 5 = -33.4
-        # Average lon = (150 + 151 + 151 + 150 + 150) / 5 = 150.4
+        # Centroid of the polygon
         assert incident.location.latitude == pytest.approx(-33.4, abs=0.1)
         assert incident.location.longitude == pytest.approx(150.4, abs=0.1)
 
-
-class TestGeometryExtraction:
-    """Test geometry extraction edge cases."""
-
-    async def test_geometry_collection_with_polygon_no_point(
-        self, hass: HomeAssistant, mock_client: MagicMock
+    async def test_direct_point_geometry(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
     ) -> None:
-        """Test GeometryCollection with polygon but no point uses polygon centroid."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-polygon-only",
-                    "headline": "Area Warning",
-                    "to": "/emergency/warning/AUREMER-polygon-only",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "GeometryCollection",
-                        "geometries": [
-                            {
-                                "type": "Polygon",
-                                "coordinates": [
-                                    [
-                                        [150.0, -33.0],
-                                        [151.0, -33.0],
-                                        [151.0, -34.0],
-                                        [150.0, -34.0],
-                                        [150.0, -33.0],
-                                    ]
-                                ],
-                            }
-                        ],
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 1,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        assert len(data.incidents) == 1
-        incident = data.incidents[0]
-        assert incident.location.latitude == pytest.approx(-33.4, abs=0.1)
-
-    async def test_direct_point_geometry(self, hass: HomeAssistant, mock_client: MagicMock) -> None:
-        """Test direct Point geometry type (not in GeometryCollection)."""
+        """Test direct Point geometry type."""
         response = {
             "emergencies": [
                 {
@@ -707,7 +865,11 @@ class TestGeometryExtraction:
         mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
 
         coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
         )
 
         data = await coordinator._async_update_data()
@@ -717,64 +879,11 @@ class TestGeometryExtraction:
         assert incident.location.latitude == -33.5
         assert incident.location.longitude == 151.0
 
-    async def test_direct_polygon_geometry(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test direct Polygon geometry type (not in GeometryCollection)."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-direct-polygon",
-                    "headline": "Polygon Warning",
-                    "to": "/emergency/warning/AUREMER-direct-polygon",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [
-                            [
-                                [150.0, -33.0],
-                                [151.0, -33.0],
-                                [151.0, -34.0],
-                                [150.0, -34.0],
-                                [150.0, -33.0],
-                            ]
-                        ],
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 1,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        assert len(data.incidents) == 1
-        incident = data.incidents[0]
-        assert incident.location.latitude == pytest.approx(-33.4, abs=0.1)
-
     async def test_unknown_geometry_type_skipped(
-        self, hass: HomeAssistant, mock_client: MagicMock
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
     ) -> None:
         """Test unknown geometry type results in skipped incident."""
         response = {
@@ -812,542 +921,16 @@ class TestGeometryExtraction:
         mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
 
         coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
         )
 
         data = await coordinator._async_update_data()
 
         # Incident should be skipped due to unknown geometry
-        assert len(data.incidents) == 0
-
-    async def test_polygon_with_empty_coordinates(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test Polygon with empty coordinates is skipped."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-empty-poly",
-                    "headline": "Empty Polygon",
-                    "to": "/emergency/warning/AUREMER-empty-poly",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [],  # Empty coordinates
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 0,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        # Incident should be skipped due to empty coordinates
-        assert len(data.incidents) == 0
-
-    async def test_invalid_timestamp_uses_now(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test invalid timestamp falls back to current time."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-bad-time",
-                    "headline": "Bad Timestamp",
-                    "to": "/emergency/warning/AUREMER-bad-time",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "not-a-valid-timestamp",  # Invalid
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [151.0, -33.5],
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 1,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        before = datetime.now()
-        data = await coordinator._async_update_data()
-        after = datetime.now()
-
-        assert len(data.incidents) == 1
-        # The updated timestamp should be approximately now
-        assert before <= data.incidents[0].updated <= after
-
-    async def test_missing_timestamp_key_uses_now(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test missing timestamp key falls back to current time."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-no-time",
-                    "headline": "No Timestamp",
-                    "to": "/emergency/warning/AUREMER-no-time",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        # "updatedTime" key is missing
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [151.0, -33.5],
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 1,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        before = datetime.now()
-        data = await coordinator._async_update_data()
-        after = datetime.now()
-
-        assert len(data.incidents) == 1
-        assert before <= data.incidents[0].updated <= after
-
-    async def test_polygon_ring_with_invalid_points(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test Polygon with some invalid points only uses valid ones."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-partial-points",
-                    "headline": "Partial Points",
-                    "to": "/emergency/warning/AUREMER-partial-points",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [
-                            [
-                                [150.0, -33.0],
-                                [151.0],
-                                [151.0, -34.0],
-                                [],
-                                [150.0, -34.0],
-                                [150.0, -33.0],
-                            ]  # Some invalid points
-                        ],
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 1,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        assert len(data.incidents) == 1
-        # Should still calculate centroid from valid points
-
-    async def test_polygon_with_empty_ring(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test Polygon with empty ring array is skipped."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-empty-ring",
-                    "headline": "Empty Ring",
-                    "to": "/emergency/warning/AUREMER-empty-ring",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[]],  # Empty ring
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 0,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        # Incident should be skipped due to empty ring
-        assert len(data.incidents) == 0
-
-    async def test_multipolygon_with_empty_coordinates(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test MultiPolygon with empty coordinates is skipped."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-empty-multipoly",
-                    "headline": "Empty MultiPolygon",
-                    "to": "/emergency/warning/AUREMER-empty-multipoly",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "MultiPolygon",
-                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
-                        "coordinates": [],  # Empty coordinates
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 0,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        # Incident should be skipped due to empty coordinates
-        assert len(data.incidents) == 0
-
-    async def test_multipolygon_with_empty_rings(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test MultiPolygon with empty rings array is skipped."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-empty-mp-rings",
-                    "headline": "Empty MultiPolygon Rings",
-                    "to": "/emergency/warning/AUREMER-empty-mp-rings",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
-                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
-                    "geometry": {
-                        "type": "MultiPolygon",
-                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
-                        "coordinates": [[[]]],  # Empty ring within polygon
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 0,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        # Incident should be skipped due to empty rings
-        assert len(data.incidents) == 0
-
-    async def test_geometry_collection_with_polygon_fallback(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test GeometryCollection falls back to Polygon centroid when no Point."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-gc-polygon-fallback",
-                    "headline": "GC Polygon Fallback",
-                    "to": "/emergency/warning/AUREMER-gc-polygon-fallback",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
-                    "cardBody": {
-                        "type": None,
-                        "size": "100 ha",
-                        "status": "Active",
-                        "source": "NSW RFS",
-                    },
-                    "geometry": {
-                        "type": "GeometryCollection",
-                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
-                        "geometries": [
-                            {
-                                "type": "Polygon",
-                                "coordinates": [
-                                    [
-                                        [150.0, -33.0],
-                                        [152.0, -33.0],
-                                        [152.0, -35.0],
-                                        [150.0, -35.0],
-                                        [150.0, -33.0],
-                                    ]
-                                ],
-                            }
-                        ],  # Only Polygon, no Point
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 1,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        assert len(data.incidents) == 1
-        # Centroid should be approximately the center of the polygon
-        # Note: includes closing point, so average is: (-33 + -33 + -35 + -35 + -33) / 5 = -33.8
-        assert data.incidents[0].location.latitude == -33.8
-        assert data.incidents[0].location.longitude == 150.8
-
-    async def test_nested_polygon_with_empty_coordinates(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test nested Polygon in GeometryCollection with empty coordinates is skipped."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-gc-empty-poly",
-                    "headline": "GC Empty Polygon",
-                    "to": "/emergency/warning/AUREMER-gc-empty-poly",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
-                    "cardBody": {
-                        "type": None,
-                        "size": None,
-                        "status": "Active",
-                        "source": "NSW RFS",
-                    },
-                    "geometry": {
-                        "type": "GeometryCollection",
-                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
-                        "geometries": [
-                            {
-                                "type": "Polygon",
-                                "coordinates": [],  # Empty polygon
-                            }
-                        ],
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 0,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        # Incident should be skipped due to empty polygon coordinates
-        assert len(data.incidents) == 0
-
-    async def test_nested_polygon_with_empty_ring(
-        self, hass: HomeAssistant, mock_client: MagicMock
-    ) -> None:
-        """Test nested Polygon in GeometryCollection with empty ring is skipped."""
-        response = {
-            "emergencies": [
-                {
-                    "id": "AUREMER-gc-empty-ring",
-                    "headline": "GC Empty Ring",
-                    "to": "/emergency/warning/AUREMER-gc-empty-ring",
-                    "alertLevelInfoPrepared": {
-                        "text": "",
-                        "level": "moderate",
-                        "style": "moderate",
-                    },
-                    "emergencyTimestampPrepared": {
-                        "date": "2025-12-06T03:00:00+00:00",
-                        "formattedTime": "2:00:00 pm AEDT",
-                        "prefix": "Effective from",
-                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
-                    },
-                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
-                    "cardBody": {
-                        "type": None,
-                        "size": None,
-                        "status": "Active",
-                        "source": "NSW RFS",
-                    },
-                    "geometry": {
-                        "type": "GeometryCollection",
-                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
-                        "geometries": [
-                            {
-                                "type": "Polygon",
-                                "coordinates": [[]],  # Empty ring
-                            }
-                        ],
-                    },
-                }
-            ],
-            "features": [],
-            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
-            "stateName": "nsw",
-            "incidentsNumber": 1,
-            "stateCount": 0,
-        }
-
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
-
-        coordinator = ABCEmergencyCoordinator(
-            hass, mock_client, state="nsw", latitude=-33.5, longitude=150.5, radius_km=100
-        )
-
-        data = await coordinator._async_update_data()
-
-        # Incident should be skipped due to empty ring
         assert len(data.incidents) == 0
 
 
@@ -1360,11 +943,12 @@ class TestModels:
 
         assert data.incidents == []
         assert data.total_count == 0
-        assert data.nearby_count == 0
+        assert data.nearby_count is None  # Changed from 0 to None
         assert data.nearest_distance_km is None
         assert data.nearest_incident is None
         assert data.highest_alert_level == ""
         assert data.incidents_by_type == {}
+        assert data.instance_type == "state"
 
     def test_emergency_incident_optional_fields(self) -> None:
         """Test EmergencyIncident optional fields."""

@@ -8,11 +8,31 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_RADIUS
+from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 
 from custom_components.abcemergency.const import (
+    CONF_INSTANCE_TYPE,
+    CONF_PERSON_ENTITY_ID,
+    CONF_PERSON_NAME,
+    CONF_RADIUS_BUSHFIRE,
+    CONF_RADIUS_EARTHQUAKE,
+    CONF_RADIUS_FIRE,
+    CONF_RADIUS_FLOOD,
+    CONF_RADIUS_HEAT,
+    CONF_RADIUS_OTHER,
+    CONF_RADIUS_STORM,
     CONF_STATE,
-    CONF_USE_HOME_LOCATION,
+    CONF_ZONE_NAME,
+    DEFAULT_RADIUS_BUSHFIRE,
+    DEFAULT_RADIUS_EARTHQUAKE,
+    DEFAULT_RADIUS_FIRE,
+    DEFAULT_RADIUS_FLOOD,
+    DEFAULT_RADIUS_HEAT,
+    DEFAULT_RADIUS_OTHER,
+    DEFAULT_RADIUS_STORM,
+    INSTANCE_TYPE_PERSON,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
     AlertLevel,
 )
 from custom_components.abcemergency.models import (
@@ -33,15 +53,54 @@ def auto_enable_custom_integrations(
 
 
 @pytest.fixture
-def mock_config_entry_data() -> dict[str, Any]:
-    """Return mock config entry data."""
+def mock_config_entry_data_state() -> dict[str, Any]:
+    """Return mock config entry data for state instance."""
     return {
+        CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
         CONF_STATE: "nsw",
+    }
+
+
+@pytest.fixture
+def mock_config_entry_data_zone() -> dict[str, Any]:
+    """Return mock config entry data for zone instance."""
+    return {
+        CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+        CONF_ZONE_NAME: "Home",
         CONF_LATITUDE: -33.8688,
         CONF_LONGITUDE: 151.2093,
-        CONF_RADIUS: 50,
-        CONF_USE_HOME_LOCATION: True,
+        CONF_RADIUS_BUSHFIRE: DEFAULT_RADIUS_BUSHFIRE,
+        CONF_RADIUS_EARTHQUAKE: DEFAULT_RADIUS_EARTHQUAKE,
+        CONF_RADIUS_STORM: DEFAULT_RADIUS_STORM,
+        CONF_RADIUS_FLOOD: DEFAULT_RADIUS_FLOOD,
+        CONF_RADIUS_FIRE: DEFAULT_RADIUS_FIRE,
+        CONF_RADIUS_HEAT: DEFAULT_RADIUS_HEAT,
+        CONF_RADIUS_OTHER: DEFAULT_RADIUS_OTHER,
     }
+
+
+@pytest.fixture
+def mock_config_entry_data_person() -> dict[str, Any]:
+    """Return mock config entry data for person instance."""
+    return {
+        CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON,
+        CONF_PERSON_ENTITY_ID: "person.john",
+        CONF_PERSON_NAME: "John",
+        CONF_RADIUS_BUSHFIRE: DEFAULT_RADIUS_BUSHFIRE,
+        CONF_RADIUS_EARTHQUAKE: DEFAULT_RADIUS_EARTHQUAKE,
+        CONF_RADIUS_STORM: DEFAULT_RADIUS_STORM,
+        CONF_RADIUS_FLOOD: DEFAULT_RADIUS_FLOOD,
+        CONF_RADIUS_FIRE: DEFAULT_RADIUS_FIRE,
+        CONF_RADIUS_HEAT: DEFAULT_RADIUS_HEAT,
+        CONF_RADIUS_OTHER: DEFAULT_RADIUS_OTHER,
+    }
+
+
+# Keep the old fixture name for backward compatibility
+@pytest.fixture
+def mock_config_entry_data(mock_config_entry_data_state: dict[str, Any]) -> dict[str, Any]:
+    """Return mock config entry data (alias for state)."""
+    return mock_config_entry_data_state
 
 
 @pytest.fixture
@@ -113,7 +172,7 @@ def mock_coordinator_data(
     mock_incident_flood: EmergencyIncident,
     mock_incident_storm: EmergencyIncident,
 ) -> CoordinatorData:
-    """Create mock coordinator data with multiple incidents."""
+    """Create mock coordinator data with multiple incidents (zone/person mode)."""
     return CoordinatorData(
         incidents=[mock_incident_bushfire, mock_incident_flood, mock_incident_storm],
         total_count=3,
@@ -122,6 +181,80 @@ def mock_coordinator_data(
         nearest_incident=mock_incident_bushfire,
         highest_alert_level=AlertLevel.EMERGENCY,
         incidents_by_type={"Bushfire": 1, "Flood": 1, "Storm": 1},
+        instance_type=INSTANCE_TYPE_ZONE,
+        location_available=True,
+        current_latitude=-33.8688,
+        current_longitude=151.2093,
+    )
+
+
+@pytest.fixture
+def mock_coordinator_data_state(
+    mock_incident_bushfire: EmergencyIncident,
+    mock_incident_flood: EmergencyIncident,
+    mock_incident_storm: EmergencyIncident,
+) -> CoordinatorData:
+    """Create mock coordinator data for state mode."""
+    # Create incidents without distance info for state mode
+    bushfire = EmergencyIncident(
+        id=mock_incident_bushfire.id,
+        headline=mock_incident_bushfire.headline,
+        alert_level=mock_incident_bushfire.alert_level,
+        alert_text=mock_incident_bushfire.alert_text,
+        event_type=mock_incident_bushfire.event_type,
+        event_icon=mock_incident_bushfire.event_icon,
+        status=mock_incident_bushfire.status,
+        size=mock_incident_bushfire.size,
+        source=mock_incident_bushfire.source,
+        location=mock_incident_bushfire.location,
+        updated=mock_incident_bushfire.updated,
+        distance_km=None,
+        bearing=None,
+        direction=None,
+    )
+    flood = EmergencyIncident(
+        id=mock_incident_flood.id,
+        headline=mock_incident_flood.headline,
+        alert_level=mock_incident_flood.alert_level,
+        alert_text=mock_incident_flood.alert_text,
+        event_type=mock_incident_flood.event_type,
+        event_icon=mock_incident_flood.event_icon,
+        status=mock_incident_flood.status,
+        size=mock_incident_flood.size,
+        source=mock_incident_flood.source,
+        location=mock_incident_flood.location,
+        updated=mock_incident_flood.updated,
+        distance_km=None,
+        bearing=None,
+        direction=None,
+    )
+    storm = EmergencyIncident(
+        id=mock_incident_storm.id,
+        headline=mock_incident_storm.headline,
+        alert_level=mock_incident_storm.alert_level,
+        alert_text=mock_incident_storm.alert_text,
+        event_type=mock_incident_storm.event_type,
+        event_icon=mock_incident_storm.event_icon,
+        status=mock_incident_storm.status,
+        size=mock_incident_storm.size,
+        source=mock_incident_storm.source,
+        location=mock_incident_storm.location,
+        updated=mock_incident_storm.updated,
+        distance_km=None,
+        bearing=None,
+        direction=None,
+    )
+
+    return CoordinatorData(
+        incidents=[bushfire, flood, storm],
+        total_count=3,
+        nearby_count=None,  # Not applicable for state mode
+        nearest_distance_km=None,
+        nearest_incident=None,
+        highest_alert_level=AlertLevel.EMERGENCY,
+        incidents_by_type={"Bushfire": 1, "Flood": 1, "Storm": 1},
+        instance_type=INSTANCE_TYPE_STATE,
+        location_available=True,
     )
 
 
@@ -136,6 +269,8 @@ def mock_coordinator_data_empty() -> CoordinatorData:
         nearest_incident=None,
         highest_alert_level="",
         incidents_by_type={},
+        instance_type=INSTANCE_TYPE_ZONE,
+        location_available=True,
     )
 
 
@@ -143,9 +278,20 @@ def mock_coordinator_data_empty() -> CoordinatorData:
 def mock_coordinator(
     mock_coordinator_data: CoordinatorData,
 ) -> MagicMock:
-    """Create a mock coordinator."""
+    """Create a mock coordinator (zone mode)."""
     coordinator = MagicMock()
     coordinator.data = mock_coordinator_data
+    coordinator.last_update_success = True
+    return coordinator
+
+
+@pytest.fixture
+def mock_coordinator_state(
+    mock_coordinator_data_state: CoordinatorData,
+) -> MagicMock:
+    """Create a mock coordinator (state mode)."""
+    coordinator = MagicMock()
+    coordinator.data = mock_coordinator_data_state
     coordinator.last_update_success = True
     return coordinator
 

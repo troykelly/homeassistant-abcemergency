@@ -1,8 +1,8 @@
 """Config flow for ABC Emergency integration.
 
 This module provides the configuration flow for setting up ABC Emergency
-via the Home Assistant UI. Users can select states, configure state-wide
-and zone-filtered monitoring with per-incident-type radius settings.
+via the Home Assistant UI. Users can select instance types (State, Zone, or Person)
+and configure each accordingly.
 """
 
 from __future__ import annotations
@@ -22,9 +22,11 @@ from homeassistant.const import (
     CONF_LONGITUDE,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
-    BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     LocationSelector,
     LocationSelectorConfig,
     NumberSelector,
@@ -34,14 +36,17 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
+from homeassistant.util import slugify
 
 from .api import ABCEmergencyClient
 from .const import (
-    CONF_ENABLE_STATE_GEO,
-    CONF_ENABLE_STATE_SENSORS,
-    CONF_ENABLE_ZONE_GEO,
-    CONF_ENABLE_ZONE_SENSORS,
+    CONF_INSTANCE_TYPE,
+    CONF_PERSON_ENTITY_ID,
+    CONF_PERSON_NAME,
     CONF_RADIUS_BUSHFIRE,
     CONF_RADIUS_EARTHQUAKE,
     CONF_RADIUS_FIRE,
@@ -49,9 +54,8 @@ from .const import (
     CONF_RADIUS_HEAT,
     CONF_RADIUS_OTHER,
     CONF_RADIUS_STORM,
-    CONF_STATES,
+    CONF_STATE,
     CONF_ZONE_NAME,
-    CONF_ZONE_SOURCE,
     DEFAULT_RADIUS_BUSHFIRE,
     DEFAULT_RADIUS_EARTHQUAKE,
     DEFAULT_RADIUS_FIRE,
@@ -60,10 +64,11 @@ from .const import (
     DEFAULT_RADIUS_OTHER,
     DEFAULT_RADIUS_STORM,
     DOMAIN,
+    INSTANCE_TYPE_PERSON,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
     STATE_NAMES,
     STATES,
-    ZONE_SOURCE_CUSTOM,
-    ZONE_SOURCE_HOME,
 )
 from .exceptions import ABCEmergencyAPIError, ABCEmergencyConnectionError
 
@@ -73,7 +78,7 @@ _LOGGER = logging.getLogger(__name__)
 class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
     """Config flow for ABC Emergency."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -83,35 +88,82 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle the initial step - state/territory selection."""
+        """Handle the initial step - instance type selection."""
+        if user_input is not None:
+            instance_type = user_input[CONF_INSTANCE_TYPE]
+            self._data[CONF_INSTANCE_TYPE] = instance_type
+
+            if instance_type == INSTANCE_TYPE_STATE:
+                return await self.async_step_state()
+            if instance_type == INSTANCE_TYPE_ZONE:
+                return await self.async_step_zone_name()
+            if instance_type == INSTANCE_TYPE_PERSON:
+                return await self.async_step_person()
+
+        instance_type_options = [
+            SelectOptionDict(
+                value=INSTANCE_TYPE_STATE,
+                label="Monitor a State/Territory",
+            ),
+            SelectOptionDict(
+                value=INSTANCE_TYPE_ZONE,
+                label="Monitor a fixed location (zone)",
+            ),
+            SelectOptionDict(
+                value=INSTANCE_TYPE_PERSON,
+                label="Monitor a person's location",
+            ),
+        ]
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_INSTANCE_TYPE): SelectSelector(
+                        SelectSelectorConfig(
+                            options=instance_type_options,
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_state(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle state selection for state instance."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            states = user_input[CONF_STATES]
-            if not states:
-                errors["base"] = "no_states_selected"
-            else:
-                # Create unique ID from sorted states
-                unique_id = f"abc_emergency_{'_'.join(sorted(states))}"
-                await self.async_set_unique_id(unique_id)
-                self._abort_if_unique_id_configured()
+            state = user_input[CONF_STATE]
 
-                # Test API connectivity with first state
-                try:
-                    session = async_get_clientsession(self.hass)
-                    client = ABCEmergencyClient(session)
-                    await client.async_get_emergencies_by_state(states[0])
-                except ABCEmergencyConnectionError:
-                    errors["base"] = "cannot_connect"
-                except ABCEmergencyAPIError:
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected error during API test")
-                    errors["base"] = "unknown"
+            # Create unique ID for state instance
+            unique_id = f"abc_emergency_state_{state}"
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
 
-                if not errors:
-                    self._data[CONF_STATES] = states
-                    return await self.async_step_state_options()
+            # Test API connectivity
+            try:
+                session = async_get_clientsession(self.hass)
+                client = ABCEmergencyClient(session)
+                await client.async_get_emergencies_by_state(state)
+            except ABCEmergencyConnectionError:
+                errors["base"] = "cannot_connect"
+            except ABCEmergencyAPIError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected error during API test")
+                errors["base"] = "unknown"
+
+            if not errors:
+                self._data[CONF_STATE] = state
+                state_name = STATE_NAMES.get(state, state.upper())
+                return self.async_create_entry(
+                    title=f"ABC Emergency ({state_name})",
+                    data=self._data,
+                )
 
         # Build state options
         state_options = [
@@ -120,14 +172,13 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
         ]
 
         return self.async_show_form(
-            step_id="user",
+            step_id="state",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_STATES, default=[]): SelectSelector(
+                    vol.Required(CONF_STATE): SelectSelector(
                         SelectSelectorConfig(
                             options=state_options,
                             mode=SelectSelectorMode.DROPDOWN,
-                            multiple=True,
                         )
                     ),
                 }
@@ -135,77 +186,63 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_state_options(
+    async def async_step_zone_name(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle state-wide options configuration."""
+        """Handle zone name and location configuration."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            self._data[CONF_ENABLE_STATE_SENSORS] = user_input.get(CONF_ENABLE_STATE_SENSORS, True)
-            self._data[CONF_ENABLE_STATE_GEO] = user_input.get(CONF_ENABLE_STATE_GEO, True)
-            return await self.async_step_zone()
-
-        return self.async_show_form(
-            step_id="state_options",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_ENABLE_STATE_SENSORS, default=True): BooleanSelector(),
-                    vol.Required(CONF_ENABLE_STATE_GEO, default=True): BooleanSelector(),
-                }
-            ),
-        )
-
-    async def async_step_zone(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> ConfigFlowResult:
-        """Handle zone configuration."""
-        if user_input is not None:
-            zone_source = user_input.get(CONF_ZONE_SOURCE, ZONE_SOURCE_HOME)
-            self._data[CONF_ZONE_SOURCE] = zone_source
-
-            if zone_source == ZONE_SOURCE_HOME:
-                # Use Home Assistant's configured location
-                self._data[CONF_LATITUDE] = self.hass.config.latitude
-                self._data[CONF_LONGITUDE] = self.hass.config.longitude
-                self._data[CONF_ZONE_NAME] = "home"
+            zone_name = user_input.get(CONF_ZONE_NAME, "").strip()
+            if not zone_name:
+                errors["base"] = "name_required"
             else:
-                # Use custom location
+                # Check for duplicate zone name
+                unique_id = f"abc_emergency_zone_{slugify(zone_name)}"
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
+
+                self._data[CONF_ZONE_NAME] = zone_name
+
+                # Get location
                 location = user_input.get("location", {})
-                self._data[CONF_LATITUDE] = location.get("latitude", self.hass.config.latitude)
-                self._data[CONF_LONGITUDE] = location.get("longitude", self.hass.config.longitude)
-                self._data[CONF_ZONE_NAME] = user_input.get(CONF_ZONE_NAME, "custom")
+                if location:
+                    self._data[CONF_LATITUDE] = location.get("latitude")
+                    self._data[CONF_LONGITUDE] = location.get("longitude")
+                else:
+                    # Use home location
+                    self._data[CONF_LATITUDE] = self.hass.config.latitude
+                    self._data[CONF_LONGITUDE] = self.hass.config.longitude
 
-            return await self.async_step_zone_radius()
+                return await self.async_step_zone_radius()
 
-        zone_options = [
-            SelectOptionDict(value=ZONE_SOURCE_HOME, label="Home Zone"),
-            SelectOptionDict(value=ZONE_SOURCE_CUSTOM, label="Custom Location"),
-        ]
+        # Default location to home
+        default_location = {
+            "latitude": self.hass.config.latitude,
+            "longitude": self.hass.config.longitude,
+        }
 
         return self.async_show_form(
-            step_id="zone",
+            step_id="zone_name",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ZONE_SOURCE, default=ZONE_SOURCE_HOME): SelectSelector(
-                        SelectSelectorConfig(
-                            options=zone_options,
-                            mode=SelectSelectorMode.DROPDOWN,
-                        )
+                    vol.Required(CONF_ZONE_NAME): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.TEXT)
                     ),
-                    vol.Optional(CONF_ZONE_NAME): vol.All(str, vol.Length(min=1, max=50)),
-                    vol.Optional("location"): LocationSelector(
+                    vol.Required("location", default=default_location): LocationSelector(
                         LocationSelectorConfig(radius=False, icon="mdi:map-marker")
                     ),
                 }
             ),
+            errors=errors,
         )
 
     async def async_step_zone_radius(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle per-incident-type radius configuration."""
+        """Handle per-incident-type radius configuration for zone."""
         if user_input is not None:
             self._data[CONF_RADIUS_BUSHFIRE] = user_input.get(
                 CONF_RADIUS_BUSHFIRE, DEFAULT_RADIUS_BUSHFIRE
@@ -218,7 +255,12 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
             self._data[CONF_RADIUS_FIRE] = user_input.get(CONF_RADIUS_FIRE, DEFAULT_RADIUS_FIRE)
             self._data[CONF_RADIUS_HEAT] = user_input.get(CONF_RADIUS_HEAT, DEFAULT_RADIUS_HEAT)
             self._data[CONF_RADIUS_OTHER] = user_input.get(CONF_RADIUS_OTHER, DEFAULT_RADIUS_OTHER)
-            return await self.async_step_zone_options()
+
+            zone_name = self._data.get(CONF_ZONE_NAME, "Zone")
+            return self.async_create_entry(
+                title=f"ABC Emergency ({zone_name})",
+                data=self._data,
+            )
 
         radius_config = NumberSelectorConfig(
             min=1,
@@ -257,35 +299,111 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
-    async def async_step_zone_options(
+    async def async_step_person(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle zone-filtered entity options."""
+        """Handle person entity selection."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            self._data[CONF_ENABLE_ZONE_SENSORS] = user_input.get(CONF_ENABLE_ZONE_SENSORS, True)
-            self._data[CONF_ENABLE_ZONE_GEO] = user_input.get(CONF_ENABLE_ZONE_GEO, True)
-
-            # Build title from states
-            states = self._data.get(CONF_STATES, [])
-            if len(states) == 1:
-                state_label = STATE_NAMES.get(states[0], states[0].upper())
-            elif len(states) <= 3:
-                state_label = ", ".join(STATE_NAMES.get(s, s.upper()) for s in states)
+            person_entity_id = user_input.get(CONF_PERSON_ENTITY_ID)
+            if not person_entity_id:
+                errors["base"] = "person_required"
             else:
-                state_label = f"{len(states)} states"
+                # Check for duplicate person
+                entity_slug = slugify(person_entity_id.replace(".", "_"))
+                unique_id = f"abc_emergency_person_{entity_slug}"
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
 
+                self._data[CONF_PERSON_ENTITY_ID] = person_entity_id
+
+                # Get friendly name from entity registry or entity state
+                ent_reg = er.async_get(self.hass)
+                entity_entry = ent_reg.async_get(person_entity_id)
+                if entity_entry and entity_entry.name:
+                    person_name = entity_entry.name
+                else:
+                    state = self.hass.states.get(person_entity_id)
+                    if state and state.attributes.get("friendly_name"):
+                        person_name = state.attributes["friendly_name"]
+                    else:
+                        # Extract name from entity_id (e.g., "person.dad" -> "Dad")
+                        person_name = person_entity_id.split(".")[-1].replace("_", " ").title()
+
+                self._data[CONF_PERSON_NAME] = person_name
+                return await self.async_step_person_radius()
+
+        return self.async_show_form(
+            step_id="person",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_PERSON_ENTITY_ID): EntitySelector(
+                        EntitySelectorConfig(domain="person")
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_person_radius(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle per-incident-type radius configuration for person."""
+        if user_input is not None:
+            self._data[CONF_RADIUS_BUSHFIRE] = user_input.get(
+                CONF_RADIUS_BUSHFIRE, DEFAULT_RADIUS_BUSHFIRE
+            )
+            self._data[CONF_RADIUS_EARTHQUAKE] = user_input.get(
+                CONF_RADIUS_EARTHQUAKE, DEFAULT_RADIUS_EARTHQUAKE
+            )
+            self._data[CONF_RADIUS_STORM] = user_input.get(CONF_RADIUS_STORM, DEFAULT_RADIUS_STORM)
+            self._data[CONF_RADIUS_FLOOD] = user_input.get(CONF_RADIUS_FLOOD, DEFAULT_RADIUS_FLOOD)
+            self._data[CONF_RADIUS_FIRE] = user_input.get(CONF_RADIUS_FIRE, DEFAULT_RADIUS_FIRE)
+            self._data[CONF_RADIUS_HEAT] = user_input.get(CONF_RADIUS_HEAT, DEFAULT_RADIUS_HEAT)
+            self._data[CONF_RADIUS_OTHER] = user_input.get(CONF_RADIUS_OTHER, DEFAULT_RADIUS_OTHER)
+
+            person_name = self._data.get(CONF_PERSON_NAME, "Person")
             return self.async_create_entry(
-                title=f"ABC Emergency ({state_label})",
+                title=f"ABC Emergency ({person_name})",
                 data=self._data,
             )
 
+        radius_config = NumberSelectorConfig(
+            min=1,
+            max=500,
+            step=1,
+            unit_of_measurement="km",
+            mode=NumberSelectorMode.BOX,
+        )
+
         return self.async_show_form(
-            step_id="zone_options",
+            step_id="person_radius",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ENABLE_ZONE_SENSORS, default=True): BooleanSelector(),
-                    vol.Required(CONF_ENABLE_ZONE_GEO, default=True): BooleanSelector(),
+                    vol.Required(
+                        CONF_RADIUS_BUSHFIRE, default=DEFAULT_RADIUS_BUSHFIRE
+                    ): NumberSelector(radius_config),
+                    vol.Required(
+                        CONF_RADIUS_EARTHQUAKE, default=DEFAULT_RADIUS_EARTHQUAKE
+                    ): NumberSelector(radius_config),
+                    vol.Required(CONF_RADIUS_STORM, default=DEFAULT_RADIUS_STORM): NumberSelector(
+                        radius_config
+                    ),
+                    vol.Required(CONF_RADIUS_FLOOD, default=DEFAULT_RADIUS_FLOOD): NumberSelector(
+                        radius_config
+                    ),
+                    vol.Required(CONF_RADIUS_FIRE, default=DEFAULT_RADIUS_FIRE): NumberSelector(
+                        radius_config
+                    ),
+                    vol.Required(CONF_RADIUS_HEAT, default=DEFAULT_RADIUS_HEAT): NumberSelector(
+                        radius_config
+                    ),
+                    vol.Required(CONF_RADIUS_OTHER, default=DEFAULT_RADIUS_OTHER): NumberSelector(
+                        radius_config
+                    ),
                 }
             ),
         )
@@ -306,63 +424,38 @@ class ABCEmergencyOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle options - show main menu."""
-        return self.async_show_menu(
-            step_id="init",
-            menu_options=["state_options", "zone_radius", "zone_options"],
-        )
+        """Handle options initialization."""
+        instance_type = self.config_entry.data.get(CONF_INSTANCE_TYPE, INSTANCE_TYPE_STATE)
 
-    async def async_step_state_options(
+        # State instances have no configurable options
+        if instance_type == INSTANCE_TYPE_STATE:
+            return self.async_abort(reason="no_options_state")
+
+        # Zone and person instances can modify radii
+        return await self.async_step_radius()
+
+    async def async_step_radius(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle state-wide options."""
+        """Handle radius options for zone/person instances."""
         if user_input is not None:
-            new_options = dict(self.config_entry.options)
-            new_options[CONF_ENABLE_STATE_SENSORS] = user_input.get(CONF_ENABLE_STATE_SENSORS, True)
-            new_options[CONF_ENABLE_STATE_GEO] = user_input.get(CONF_ENABLE_STATE_GEO, True)
-            return self.async_create_entry(title="", data=new_options)
-
-        current_sensors = self.config_entry.options.get(
-            CONF_ENABLE_STATE_SENSORS,
-            self.config_entry.data.get(CONF_ENABLE_STATE_SENSORS, True),
-        )
-        current_geo = self.config_entry.options.get(
-            CONF_ENABLE_STATE_GEO,
-            self.config_entry.data.get(CONF_ENABLE_STATE_GEO, True),
-        )
-
-        return self.async_show_form(
-            step_id="state_options",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_ENABLE_STATE_SENSORS, default=current_sensors
-                    ): BooleanSelector(),
-                    vol.Required(CONF_ENABLE_STATE_GEO, default=current_geo): BooleanSelector(),
-                }
-            ),
-        )
-
-    async def async_step_zone_radius(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> ConfigFlowResult:
-        """Handle per-incident-type radius options."""
-        if user_input is not None:
-            new_options = dict(self.config_entry.options)
-            new_options[CONF_RADIUS_BUSHFIRE] = user_input.get(
-                CONF_RADIUS_BUSHFIRE, DEFAULT_RADIUS_BUSHFIRE
+            return self.async_create_entry(
+                title="",
+                data={
+                    CONF_RADIUS_BUSHFIRE: user_input.get(
+                        CONF_RADIUS_BUSHFIRE, DEFAULT_RADIUS_BUSHFIRE
+                    ),
+                    CONF_RADIUS_EARTHQUAKE: user_input.get(
+                        CONF_RADIUS_EARTHQUAKE, DEFAULT_RADIUS_EARTHQUAKE
+                    ),
+                    CONF_RADIUS_STORM: user_input.get(CONF_RADIUS_STORM, DEFAULT_RADIUS_STORM),
+                    CONF_RADIUS_FLOOD: user_input.get(CONF_RADIUS_FLOOD, DEFAULT_RADIUS_FLOOD),
+                    CONF_RADIUS_FIRE: user_input.get(CONF_RADIUS_FIRE, DEFAULT_RADIUS_FIRE),
+                    CONF_RADIUS_HEAT: user_input.get(CONF_RADIUS_HEAT, DEFAULT_RADIUS_HEAT),
+                    CONF_RADIUS_OTHER: user_input.get(CONF_RADIUS_OTHER, DEFAULT_RADIUS_OTHER),
+                },
             )
-            new_options[CONF_RADIUS_EARTHQUAKE] = user_input.get(
-                CONF_RADIUS_EARTHQUAKE, DEFAULT_RADIUS_EARTHQUAKE
-            )
-            new_options[CONF_RADIUS_STORM] = user_input.get(CONF_RADIUS_STORM, DEFAULT_RADIUS_STORM)
-            new_options[CONF_RADIUS_FLOOD] = user_input.get(CONF_RADIUS_FLOOD, DEFAULT_RADIUS_FLOOD)
-            new_options[CONF_RADIUS_FIRE] = user_input.get(CONF_RADIUS_FIRE, DEFAULT_RADIUS_FIRE)
-            new_options[CONF_RADIUS_HEAT] = user_input.get(CONF_RADIUS_HEAT, DEFAULT_RADIUS_HEAT)
-            new_options[CONF_RADIUS_OTHER] = user_input.get(CONF_RADIUS_OTHER, DEFAULT_RADIUS_OTHER)
-            return self.async_create_entry(title="", data=new_options)
 
         def get_radius(key: str, default: int) -> int:
             value = self.config_entry.options.get(key, self.config_entry.data.get(key, default))
@@ -377,7 +470,7 @@ class ABCEmergencyOptionsFlow(OptionsFlow):
         )
 
         return self.async_show_form(
-            step_id="zone_radius",
+            step_id="radius",
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -408,38 +501,6 @@ class ABCEmergencyOptionsFlow(OptionsFlow):
                         CONF_RADIUS_OTHER,
                         default=get_radius(CONF_RADIUS_OTHER, DEFAULT_RADIUS_OTHER),
                     ): NumberSelector(radius_config),
-                }
-            ),
-        )
-
-    async def async_step_zone_options(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> ConfigFlowResult:
-        """Handle zone-filtered entity options."""
-        if user_input is not None:
-            new_options = dict(self.config_entry.options)
-            new_options[CONF_ENABLE_ZONE_SENSORS] = user_input.get(CONF_ENABLE_ZONE_SENSORS, True)
-            new_options[CONF_ENABLE_ZONE_GEO] = user_input.get(CONF_ENABLE_ZONE_GEO, True)
-            return self.async_create_entry(title="", data=new_options)
-
-        current_sensors = self.config_entry.options.get(
-            CONF_ENABLE_ZONE_SENSORS,
-            self.config_entry.data.get(CONF_ENABLE_ZONE_SENSORS, True),
-        )
-        current_geo = self.config_entry.options.get(
-            CONF_ENABLE_ZONE_GEO,
-            self.config_entry.data.get(CONF_ENABLE_ZONE_GEO, True),
-        )
-
-        return self.async_show_form(
-            step_id="zone_options",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_ENABLE_ZONE_SENSORS, default=current_sensors
-                    ): BooleanSelector(),
-                    vol.Required(CONF_ENABLE_ZONE_GEO, default=current_geo): BooleanSelector(),
                 }
             ),
         )

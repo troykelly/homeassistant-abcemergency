@@ -79,12 +79,20 @@ class CoordinatorData:
         nearest_incident: Reference to the nearest incident, if any.
         highest_alert_level: Highest alert level among nearby incidents.
         incidents_by_type: Count of incidents grouped by event type.
+        instance_type: Type of instance (state, zone, person).
+        location_available: Whether location is available (for person mode).
+        current_latitude: Current latitude used for calculations.
+        current_longitude: Current longitude used for calculations.
     """
 
     incidents: list[EmergencyIncident] = field(default_factory=list)
     total_count: int = 0
-    nearby_count: int = 0
+    nearby_count: int | None = None
     nearest_distance_km: float | None = None
     nearest_incident: EmergencyIncident | None = None
     highest_alert_level: str = ""
     incidents_by_type: dict[str, int] = field(default_factory=dict)
+    instance_type: str = "state"
+    location_available: bool = True
+    current_latitude: float | None = None
+    current_longitude: float | None = None

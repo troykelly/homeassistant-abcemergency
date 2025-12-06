@@ -12,7 +12,17 @@ from typing import TYPE_CHECKING
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    CONF_INSTANCE_TYPE,
+    CONF_PERSON_NAME,
+    CONF_STATE,
+    CONF_ZONE_NAME,
+    DOMAIN,
+    INSTANCE_TYPE_PERSON,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
+    STATE_NAMES,
+)
 from .coordinator import ABCEmergencyCoordinator
 from .models import CoordinatorData
 
@@ -42,11 +52,25 @@ class ABCEmergencyEntity(CoordinatorEntity[ABCEmergencyCoordinator]):
         """
         super().__init__(coordinator)
 
-        state_upper = config_entry.data["state"].upper()
+        # Determine device name based on instance type
+        instance_type = config_entry.data.get(CONF_INSTANCE_TYPE, INSTANCE_TYPE_STATE)
+
+        if instance_type == INSTANCE_TYPE_STATE:
+            state = config_entry.data.get(CONF_STATE, "")
+            state_name = STATE_NAMES.get(state, state.upper())
+            device_name = f"ABC Emergency ({state_name})"
+        elif instance_type == INSTANCE_TYPE_ZONE:
+            zone_name = config_entry.data.get(CONF_ZONE_NAME, "Zone")
+            device_name = f"ABC Emergency ({zone_name})"
+        elif instance_type == INSTANCE_TYPE_PERSON:
+            person_name = config_entry.data.get(CONF_PERSON_NAME, "Person")
+            device_name = f"ABC Emergency ({person_name})"
+        else:
+            device_name = "ABC Emergency"
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
-            name=f"ABC Emergency ({state_upper})",
+            name=device_name,
             manufacturer="Australian Broadcasting Corporation",
             model="Emergency Data Feed",
             entry_type=DeviceEntryType.SERVICE,

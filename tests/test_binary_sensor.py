@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
-from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_RADIUS
+from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -17,9 +17,12 @@ from custom_components.abcemergency.binary_sensor import (
     async_setup_entry,
 )
 from custom_components.abcemergency.const import (
+    CONF_INSTANCE_TYPE,
     CONF_STATE,
-    CONF_USE_HOME_LOCATION,
+    CONF_ZONE_NAME,
     DOMAIN,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
     AlertLevel,
 )
 from custom_components.abcemergency.models import (
@@ -114,6 +117,17 @@ class TestGetEmergencyAttrs:
         assert result["count"] == 1
         assert result["nearest_headline"] == "Flood Warning at River Area"
 
+    def test_returns_state_format_for_state_instance(
+        self,
+        mock_coordinator_data_state: CoordinatorData,
+    ) -> None:
+        """Test returns state instance format (no distance info)."""
+        result = _get_emergency_attrs(mock_coordinator_data_state, AlertLevel.EMERGENCY)
+        assert result["count"] == 1
+        assert "headline" in result
+        # State format uses "headline" not "nearest_headline"
+        assert "nearest_distance_km" not in result
+
 
 class TestBinarySensorIsOnFunctions:
     """Test is_on functions in binary sensor descriptions."""
@@ -133,6 +147,14 @@ class TestBinarySensorIsOnFunctions:
         """Test active_alert is off when nearby_count == 0."""
         desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "active_alert")
         assert desc.is_on_fn(mock_coordinator_data_empty) is False
+
+    def test_active_alert_is_on_for_state_with_incidents(
+        self,
+        mock_coordinator_data_state: CoordinatorData,
+    ) -> None:
+        """Test active_alert is on for state instance with incidents."""
+        desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "active_alert")
+        assert desc.is_on_fn(mock_coordinator_data_state) is True
 
     def test_emergency_warning_is_on_when_extreme(
         self,
@@ -169,6 +191,7 @@ class TestBinarySensorIsOnFunctions:
             total_count=1,
             nearby_count=1,
             highest_alert_level=AlertLevel.WATCH_AND_ACT,
+            instance_type=INSTANCE_TYPE_ZONE,
         )
         assert desc.is_on_fn(data) is True
 
@@ -191,6 +214,7 @@ class TestBinarySensorIsOnFunctions:
             total_count=1,
             nearby_count=1,
             highest_alert_level=AlertLevel.ADVICE,
+            instance_type=INSTANCE_TYPE_ZONE,
         )
         assert desc.is_on_fn(data) is True
 
@@ -214,13 +238,12 @@ class TestABCEmergencyBinarySensor:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_STATE: "nsw",
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_zone_home",
         )
         desc = BINARY_SENSOR_DESCRIPTIONS[0]
 
@@ -236,13 +259,12 @@ class TestABCEmergencyBinarySensor:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_STATE: "nsw",
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_zone_home",
         )
         desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "active_alert")
 
@@ -258,13 +280,12 @@ class TestABCEmergencyBinarySensor:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_STATE: "nsw",
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_zone_home",
         )
         desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "emergency_warning")
 
@@ -283,13 +304,10 @@ class TestABCEmergencyBinarySensor:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "active_alert")
 
@@ -310,13 +328,10 @@ class TestAsyncSetupEntry:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         entry.add_to_hass(hass)
 

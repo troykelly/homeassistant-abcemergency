@@ -5,21 +5,27 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_RADIUS
+from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abcemergency import (
     PLATFORMS,
+    async_migrate_entry,
     async_setup_entry,
     async_unload_entry,
     async_update_options,
 )
 from custom_components.abcemergency.const import (
+    CONF_INSTANCE_TYPE,
+    CONF_PERSON_ENTITY_ID,
+    CONF_PERSON_NAME,
     CONF_STATE,
-    CONF_USE_HOME_LOCATION,
-    DEFAULT_RADIUS_KM,
+    CONF_ZONE_NAME,
     DOMAIN,
+    INSTANCE_TYPE_PERSON,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
 )
 
 if TYPE_CHECKING:
@@ -55,21 +61,18 @@ class TestPlatforms:
 class TestAsyncSetupEntry:
     """Test async_setup_entry function."""
 
-    async def test_setup_creates_coordinator(
+    async def test_setup_creates_coordinator_state_mode(
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Test that setup creates and stores coordinator."""
+        """Test that setup creates coordinator for state mode."""
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         entry.add_to_hass(hass)
 
@@ -91,25 +94,26 @@ class TestAsyncSetupEntry:
             assert DOMAIN in hass.data
             assert entry.entry_id in hass.data[DOMAIN]
             mock_coordinator_class.assert_called_once()
-            mock_coordinator.async_config_entry_first_refresh.assert_called_once()
+            # Verify state mode parameters
+            call_kwargs = mock_coordinator_class.call_args.kwargs
+            assert call_kwargs["instance_type"] == INSTANCE_TYPE_STATE
+            assert call_kwargs["state"] == "nsw"
             mock_forward.assert_called_once_with(entry, PLATFORMS)
 
-    async def test_setup_uses_options_radius(
+    async def test_setup_creates_coordinator_zone_mode(
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Test that setup uses radius from options if present."""
+        """Test that setup creates coordinator for zone mode."""
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_STATE: "nsw",
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            options={CONF_RADIUS: 100},
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_zone_home",
         )
         entry.add_to_hass(hass)
 
@@ -123,26 +127,27 @@ class TestAsyncSetupEntry:
             mock_coordinator = mock_coordinator_class.return_value
             mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
-            await async_setup_entry(hass, entry)
+            result = await async_setup_entry(hass, entry)
 
-            # Check that radius_km=100 was passed (from options, not data)
+            assert result is True
             call_kwargs = mock_coordinator_class.call_args.kwargs
-            assert call_kwargs["radius_km"] == 100
+            assert call_kwargs["instance_type"] == INSTANCE_TYPE_ZONE
+            assert call_kwargs["latitude"] == -33.8688
+            assert call_kwargs["longitude"] == 151.2093
 
-    async def test_setup_uses_default_radius(
+    async def test_setup_creates_coordinator_person_mode(
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Test that setup uses default radius when not in data or options."""
+        """Test that setup creates coordinator for person mode."""
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_USE_HOME_LOCATION: True,
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON,
+                CONF_PERSON_ENTITY_ID: "person.john",
+                CONF_PERSON_NAME: "John",
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_person_john",
         )
         entry.add_to_hass(hass)
 
@@ -156,10 +161,12 @@ class TestAsyncSetupEntry:
             mock_coordinator = mock_coordinator_class.return_value
             mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
-            await async_setup_entry(hass, entry)
+            result = await async_setup_entry(hass, entry)
 
+            assert result is True
             call_kwargs = mock_coordinator_class.call_args.kwargs
-            assert call_kwargs["radius_km"] == DEFAULT_RADIUS_KM
+            assert call_kwargs["instance_type"] == INSTANCE_TYPE_PERSON
+            assert call_kwargs["person_entity_id"] == "person.john"
 
     async def test_setup_registers_update_listener(
         self,
@@ -169,13 +176,10 @@ class TestAsyncSetupEntry:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         entry.add_to_hass(hass)
 
@@ -209,13 +213,10 @@ class TestAsyncUnloadEntry:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         entry.add_to_hass(hass)
 
@@ -242,13 +243,10 @@ class TestAsyncUnloadEntry:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         entry.add_to_hass(hass)
 
@@ -280,13 +278,10 @@ class TestAsyncUpdateOptions:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         entry.add_to_hass(hass)
 
@@ -300,6 +295,73 @@ class TestAsyncUpdateOptions:
             mock_reload.assert_called_once_with(entry.entry_id)
 
 
+class TestAsyncMigrateEntry:
+    """Test config entry migration."""
+
+    async def test_migrate_v1_to_v3(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test migration from v1 to v3."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_STATE: "nsw",
+            },
+            unique_id="abc_emergency_nsw",
+            version=1,
+        )
+        entry.add_to_hass(hass)
+
+        result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 3
+        assert entry.data[CONF_INSTANCE_TYPE] == INSTANCE_TYPE_STATE
+        assert entry.data[CONF_STATE] == "nsw"
+
+    async def test_migrate_v2_to_v3(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test migration from v2 to v3."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "states": ["nsw", "vic"],
+            },
+            unique_id="abc_emergency_multi",
+            version=2,
+        )
+        entry.add_to_hass(hass)
+
+        result = await async_migrate_entry(hass, entry)
+
+        assert result is True
+        assert entry.version == 3
+        assert entry.data[CONF_INSTANCE_TYPE] == INSTANCE_TYPE_STATE
+        assert entry.data[CONF_STATE] == "nsw"  # First state only
+
+    async def test_migrate_v2_no_states_fails(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test migration from v2 with no states fails."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "states": [],
+            },
+            unique_id="abc_emergency_empty",
+            version=2,
+        )
+        entry.add_to_hass(hass)
+
+        result = await async_migrate_entry(hass, entry)
+
+        assert result is False
+
+
 class TestIntegrationSetup:
     """Integration tests for full setup/unload cycle."""
 
@@ -311,13 +373,10 @@ class TestIntegrationSetup:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
                 CONF_STATE: "nsw",
-                CONF_LATITUDE: -33.8688,
-                CONF_LONGITUDE: 151.2093,
-                CONF_RADIUS: 50,
-                CONF_USE_HOME_LOCATION: True,
             },
-            unique_id="abc_emergency_nsw",
+            unique_id="abc_emergency_state_nsw",
         )
         entry.add_to_hass(hass)
 

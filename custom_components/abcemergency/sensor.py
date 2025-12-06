@@ -2,6 +2,10 @@
 
 This module provides sensor entities that expose emergency incident data
 such as counts, distances, and aggregate information.
+
+Sensors created depend on instance type:
+- State: Total incidents, highest alert level, incidents by type
+- Zone/Person: Above plus nearby count, nearest incident distance
 """
 
 from __future__ import annotations
@@ -20,7 +24,11 @@ from homeassistant.const import UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import (
+    CONF_INSTANCE_TYPE,
+    DOMAIN,
+    INSTANCE_TYPE_STATE,
+)
 from .coordinator import ABCEmergencyCoordinator
 from .entity import ABCEmergencyEntity
 from .models import CoordinatorData
@@ -35,6 +43,7 @@ class ABCEmergencySensorEntityDescription(SensorEntityDescription):
 
     value_fn: Callable[[CoordinatorData], int | float | str | None]
     attr_fn: Callable[[CoordinatorData], dict[str, Any]] | None = None
+    location_only: bool = False  # Only for zone/person instances
 
 
 def _get_nearest_incident_attrs(data: CoordinatorData) -> dict[str, Any]:
@@ -49,31 +58,14 @@ def _get_nearest_incident_attrs(data: CoordinatorData) -> dict[str, Any]:
     }
 
 
-SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
+# Sensors for all instance types
+COMMON_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
     ABCEmergencySensorEntityDescription(
         key="incidents_total",
         translation_key="incidents_total",
         native_unit_of_measurement=None,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.total_count,
-    ),
-    ABCEmergencySensorEntityDescription(
-        key="incidents_nearby",
-        translation_key="incidents_nearby",
-        native_unit_of_measurement=None,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.nearby_count,
-    ),
-    ABCEmergencySensorEntityDescription(
-        key="nearest_incident",
-        translation_key="nearest_incident",
-        device_class=SensorDeviceClass.DISTANCE,
-        native_unit_of_measurement=UnitOfLength.KILOMETERS,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: (
-            round(data.nearest_distance_km, 1) if data.nearest_distance_km else None
-        ),
-        attr_fn=_get_nearest_incident_attrs,
     ),
     ABCEmergencySensorEntityDescription(
         key="highest_alert_level",
@@ -97,6 +89,30 @@ SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
         translation_key="storms",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.incidents_by_type.get("Storm", 0),
+    ),
+)
+
+# Sensors only for zone/person instances (require location)
+LOCATION_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
+    ABCEmergencySensorEntityDescription(
+        key="incidents_nearby",
+        translation_key="incidents_nearby",
+        native_unit_of_measurement=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.nearby_count if data.nearby_count is not None else 0,
+        location_only=True,
+    ),
+    ABCEmergencySensorEntityDescription(
+        key="nearest_incident",
+        translation_key="nearest_incident",
+        device_class=SensorDeviceClass.DISTANCE,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            round(data.nearest_distance_km, 1) if data.nearest_distance_km else None
+        ),
+        attr_fn=_get_nearest_incident_attrs,
+        location_only=True,
     ),
 )
 
@@ -149,7 +165,15 @@ async def async_setup_entry(
         async_add_entities: Callback to add entities.
     """
     coordinator: ABCEmergencyCoordinator = hass.data[DOMAIN][entry.entry_id]
+    instance_type = entry.data.get(CONF_INSTANCE_TYPE, INSTANCE_TYPE_STATE)
+
+    # Determine which sensors to create
+    descriptions = list(COMMON_SENSOR_DESCRIPTIONS)
+
+    # Add location-specific sensors for zone/person instances
+    if instance_type != INSTANCE_TYPE_STATE:
+        descriptions.extend(LOCATION_SENSOR_DESCRIPTIONS)
 
     async_add_entities(
-        ABCEmergencySensor(coordinator, entry, description) for description in SENSOR_DESCRIPTIONS
+        ABCEmergencySensor(coordinator, entry, description) for description in descriptions
     )

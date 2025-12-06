@@ -358,8 +358,8 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             incidents_by_type[event_type] = incidents_by_type.get(event_type, 0) + 1
 
         return CoordinatorData(
-            incidents=incidents,
-            total_count=len(incidents),
+            incidents=nearby_incidents,  # Only include incidents within configured radii
+            total_count=len(incidents),  # Total in the state for reference
             nearby_count=len(nearby_incidents),
             nearest_distance_km=nearest_distance,
             nearest_incident=nearest_incident,

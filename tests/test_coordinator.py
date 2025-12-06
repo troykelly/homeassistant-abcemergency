@@ -519,10 +519,75 @@ class TestCoordinatorUpdateZoneMode:
         hass: HomeAssistant,
         mock_client: MagicMock,
         mock_config_entry_zone: MockConfigEntry,
-        sample_api_response: dict,
     ) -> None:
         """Test incidents are sorted by distance (nearest first)."""
-        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=sample_api_response)
+        # Create response with multiple nearby bushfires (within 50km radius)
+        nearby_response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-far",
+                    "headline": "Far Fire",
+                    "to": "/emergency/warning/AUREMER-far",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "500 ha",
+                        "status": "Out of control",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.0, -33.87]}],  # ~20km
+                    },
+                },
+                {
+                    "id": "AUREMER-near",
+                    "headline": "Near Fire",
+                    "to": "/emergency/warning/AUREMER-near",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T04:00:00+00:00",
+                        "formattedTime": "3:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T04:30:00.00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "100 ha",
+                        "status": "Being controlled",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.25, -33.87]}],  # ~5km
+                    },
+                },
+            ],
+            "features": [],
+            "mapBound": [[140.0, -38.0], [154.0, -28.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 2,
+            "stateCount": 125,
+        }
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=nearby_response)
 
         coordinator = ABCEmergencyCoordinator(
             hass,
@@ -535,7 +600,8 @@ class TestCoordinatorUpdateZoneMode:
 
         data = await coordinator._async_update_data()
 
-        assert len(data.incidents) >= 2
+        # Both incidents should be within 50km bushfire radius
+        assert len(data.incidents) == 2
         distances = [i.distance_km for i in data.incidents]
         assert distances == sorted(distances)
 

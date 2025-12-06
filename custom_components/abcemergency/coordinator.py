@@ -23,6 +23,7 @@ from .const import (
     DOMAIN,
     AlertLevel,
     Emergency,
+    Geometry,
 )
 from .exceptions import ABCEmergencyAPIError, ABCEmergencyConnectionError
 from .helpers import bearing_to_direction, calculate_distance, get_bearing
@@ -214,7 +215,7 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             direction=direction,
         )
 
-    def _extract_location(self, geometry: dict) -> Coordinate | None:  # type: ignore[type-arg]
+    def _extract_location(self, geometry: Geometry) -> Coordinate | None:
         """Extract location coordinates from geometry.
 
         Handles various geometry types:
@@ -253,7 +254,7 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
         return None
 
-    def _calculate_polygon_centroid(self, geometry: dict) -> Coordinate | None:  # type: ignore[type-arg]
+    def _calculate_polygon_centroid(self, geometry: Geometry) -> Coordinate | None:
         """Calculate the centroid of a polygon or multipolygon.
 
         This is a simple average of all coordinates, which gives an

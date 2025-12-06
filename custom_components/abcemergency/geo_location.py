@@ -149,8 +149,8 @@ class ABCEmergencyGeoLocationManager:
         # Remove old incidents
         removed_ids = existing_ids - current_ids
         for incident_id in removed_ids:
-            entity = self._entities.pop(incident_id, None)
-            if entity:
+            if incident_id in self._entities:
+                entity = self._entities.pop(incident_id)
                 self._hass.async_create_task(entity.async_remove(force_remove=True))
 
 

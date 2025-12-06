@@ -63,4 +63,5 @@ class ABCEmergencyEntity(CoordinatorEntity[ABCEmergencyCoordinator]):
         Returns:
             The current coordinator data.
         """
-        return self.coordinator.data
+        coordinator_data: CoordinatorData = self.coordinator.data
+        return coordinator_data

@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
-from aiohttp import ClientError, ClientResponseError
+from aiohttp import ClientError, ClientResponseError, ClientTimeout
 
 from .const import (
     API_BASE_URL,
@@ -90,12 +90,12 @@ class ABCEmergencyClient:
             async with self._session.get(
                 url,
                 headers=headers,
-                timeout=DEFAULT_TIMEOUT,
+                timeout=ClientTimeout(total=DEFAULT_TIMEOUT),
             ) as response:
                 response.raise_for_status()
-                data = await response.json()
+                data: dict[str, object] = await response.json()
                 _LOGGER.debug("Received response with %d bytes", len(str(data)))
-                return data  # type: ignore[return-value]
+                return data
 
         except TimeoutError as err:
             _LOGGER.error("Timeout connecting to ABC Emergency API: %s", err)

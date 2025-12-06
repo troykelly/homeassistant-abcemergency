@@ -2,6 +2,10 @@
 
 This module provides binary sensor entities that indicate active alert states,
 ideal for automations and notifications.
+
+Binary sensors are created for all instance types (state, zone, person).
+For state instances, the sensors indicate if any alert is active in the state.
+For zone/person instances, they indicate alerts within the configured radii.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, AlertLevel
+from .const import DOMAIN, INSTANCE_TYPE_STATE, AlertLevel
 from .coordinator import ABCEmergencyCoordinator
 from .entity import ABCEmergencyEntity
 from .models import CoordinatorData
@@ -33,6 +37,7 @@ class ABCEmergencyBinarySensorEntityDescription(BinarySensorEntityDescription):
 
     is_on_fn: Callable[[CoordinatorData], bool]
     attr_fn: Callable[[CoordinatorData], dict[str, Any]] | None = None
+    location_only: bool = False  # Only for zone/person instances
 
 
 def _get_emergency_attrs(
@@ -51,26 +56,50 @@ def _get_emergency_attrs(
     if isinstance(levels, str):
         levels = (levels,)
 
-    matching = [i for i in data.incidents if i.alert_level in levels and i.distance_km is not None]
+    # For location-based instances, filter by distance
+    if data.instance_type != INSTANCE_TYPE_STATE:
+        matching = [
+            i for i in data.incidents if i.alert_level in levels and i.distance_km is not None
+        ]
+    else:
+        # For state instances, show all matching
+        matching = [i for i in data.incidents if i.alert_level in levels]
 
     if not matching:
         return {}
 
-    nearest = min(matching, key=lambda i: i.distance_km or float("inf"))
-    return {
-        "count": len(matching),
-        "nearest_headline": nearest.headline,
-        "nearest_distance_km": round(nearest.distance_km, 1) if nearest.distance_km else None,
-        "nearest_direction": nearest.direction,
-    }
+    # For location-based, find nearest; for state, just take the first
+    if data.instance_type != INSTANCE_TYPE_STATE:
+        nearest = min(matching, key=lambda i: i.distance_km or float("inf"))
+        return {
+            "count": len(matching),
+            "nearest_headline": nearest.headline,
+            "nearest_distance_km": round(nearest.distance_km, 1) if nearest.distance_km else None,
+            "nearest_direction": nearest.direction,
+        }
+    else:
+        # For state instances, just return count and first incident
+        first = matching[0]
+        return {
+            "count": len(matching),
+            "headline": first.headline,
+        }
 
 
+def _is_active_alert(data: CoordinatorData) -> bool:
+    """Check if there's an active alert."""
+    if data.instance_type == INSTANCE_TYPE_STATE:
+        return data.total_count > 0
+    return data.nearby_count is not None and data.nearby_count > 0
+
+
+# Sensors for all instance types (based on highest_alert_level which works for all)
 BINARY_SENSOR_DESCRIPTIONS: tuple[ABCEmergencyBinarySensorEntityDescription, ...] = (
     ABCEmergencyBinarySensorEntityDescription(
         key="active_alert",
         translation_key="active_alert",
         device_class=BinarySensorDeviceClass.SAFETY,
-        is_on_fn=lambda data: data.nearby_count > 0,
+        is_on_fn=_is_active_alert,
     ),
     ABCEmergencyBinarySensorEntityDescription(
         key="emergency_warning",

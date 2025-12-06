@@ -26,6 +26,19 @@ CONF_STATE: Final = "state"
 CONF_STATES: Final = "states"
 CONF_USE_HOME_LOCATION: Final = "use_home_location"
 
+# Instance type configuration (v3+)
+CONF_INSTANCE_TYPE: Final = "instance_type"
+CONF_PERSON_ENTITY_ID: Final = "person_entity_id"
+CONF_PERSON_NAME: Final = "person_name"
+
+# Instance type literal
+InstanceTypeLiteral = Literal["state", "zone", "person"]
+
+# Instance type constants
+INSTANCE_TYPE_STATE: Final = "state"
+INSTANCE_TYPE_ZONE: Final = "zone"
+INSTANCE_TYPE_PERSON: Final = "person"
+
 # Configuration keys - State-wide options
 CONF_ENABLE_STATE_SENSORS: Final = "enable_state_sensors"
 CONF_ENABLE_STATE_GEO: Final = "enable_state_geo"

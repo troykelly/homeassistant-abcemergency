@@ -3,26 +3,24 @@
     "step": {
       "user": {
         "title": "ABC Emergency",
-        "description": "Select the Australian states or territories to monitor for emergencies.",
+        "description": "What would you like to monitor?",
         "data": {
-          "states": "States/Territories"
+          "instance_type": "Monitoring type"
         }
       },
-      "state_options": {
-        "title": "State-wide Monitoring",
-        "description": "Configure state-wide entity options. These entities show all incidents across the selected states.",
+      "state": {
+        "title": "Select State/Territory",
+        "description": "Select the Australian state or territory to monitor for emergencies.",
         "data": {
-          "enable_state_sensors": "Enable state-wide sensors",
-          "enable_state_geo": "Enable state-wide map markers"
+          "state": "State/Territory"
         }
       },
-      "zone": {
+      "zone_name": {
         "title": "Zone Configuration",
         "description": "Configure a monitoring zone for proximity-based alerts.",
         "data": {
-          "zone_source": "Zone source",
-          "zone_name": "Zone name (optional)",
-          "location": "Custom location"
+          "zone_name": "Zone name",
+          "location": "Location"
         }
       },
       "zone_radius": {
@@ -38,43 +36,43 @@
           "radius_other": "Other incidents radius"
         }
       },
-      "zone_options": {
-        "title": "Zone-filtered Monitoring",
-        "description": "Configure zone-filtered entity options. These entities only show incidents within the configured radii.",
+      "person": {
+        "title": "Select Person",
+        "description": "Select a person entity to monitor. The integration will track emergencies near this person's current location.",
         "data": {
-          "enable_zone_sensors": "Enable zone-filtered sensors",
-          "enable_zone_geo": "Enable zone-filtered map markers"
+          "person_entity_id": "Person"
+        }
+      },
+      "person_radius": {
+        "title": "Alert Radii by Incident Type",
+        "description": "Configure the alert radius for each incident type. Incidents within these distances from the person will be tracked.",
+        "data": {
+          "radius_bushfire": "Bushfire radius",
+          "radius_earthquake": "Earthquake radius",
+          "radius_storm": "Storm radius",
+          "radius_flood": "Flood radius",
+          "radius_fire": "Structure fire radius",
+          "radius_heat": "Extreme heat radius",
+          "radius_other": "Other incidents radius"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to ABC Emergency API",
       "unknown": "Unexpected error occurred",
-      "no_states_selected": "Please select at least one state or territory"
+      "name_required": "Please enter a zone name",
+      "person_required": "Please select a person entity"
     },
     "abort": {
-      "already_configured": "This combination of states is already configured"
+      "already_configured": "This configuration is already set up"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "ABC Emergency Options",
-        "menu_options": {
-          "state_options": "State-wide entity options",
-          "zone_radius": "Alert radii by incident type",
-          "zone_options": "Zone-filtered entity options"
-        }
+        "title": "ABC Emergency Options"
       },
-      "state_options": {
-        "title": "State-wide Entity Options",
-        "description": "Configure which state-wide entities to enable.",
-        "data": {
-          "enable_state_sensors": "Enable state-wide sensors",
-          "enable_state_geo": "Enable state-wide map markers"
-        }
-      },
-      "zone_radius": {
+      "radius": {
         "title": "Alert Radii by Incident Type",
         "description": "Configure the alert radius for each incident type.",
         "data": {
@@ -86,15 +84,10 @@
           "radius_heat": "Extreme heat radius",
           "radius_other": "Other incidents radius"
         }
-      },
-      "zone_options": {
-        "title": "Zone-filtered Entity Options",
-        "description": "Configure which zone-filtered entities to enable.",
-        "data": {
-          "enable_zone_sensors": "Enable zone-filtered sensors",
-          "enable_zone_geo": "Enable zone-filtered map markers"
-        }
       }
+    },
+    "abort": {
+      "no_options_state": "State instances have no configurable options"
     }
   },
   "entity": {

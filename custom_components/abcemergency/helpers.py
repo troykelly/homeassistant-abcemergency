@@ -130,3 +130,45 @@ def get_radius_category(event_type: str) -> RadiusCategoryLiteral:
         The radius category for this event type.
     """
     return INCIDENT_TYPE_TO_RADIUS_CATEGORY.get(event_type, "other")
+
+
+# Approximate bounding boxes for Australian states/territories
+# Format: (min_lat, max_lat, min_lon, max_lon)
+STATE_BOUNDING_BOXES: dict[str, tuple[float, float, float, float]] = {
+    "act": (-35.92, -35.12, 148.76, 149.40),  # ACT
+    "nsw": (-37.50, -28.16, 140.99, 153.64),  # NSW
+    "nt": (-26.00, -10.97, 129.00, 138.00),  # NT
+    "qld": (-29.18, -10.69, 138.00, 153.55),  # QLD
+    "sa": (-38.06, -26.00, 129.00, 141.00),  # SA
+    "tas": (-43.65, -39.45, 143.82, 148.48),  # TAS
+    "vic": (-39.20, -33.98, 140.96, 149.98),  # VIC
+    "wa": (-35.13, -13.69, 112.92, 129.00),  # WA
+}
+
+
+def get_state_from_coordinates(latitude: float, longitude: float) -> str | None:
+    """Determine which Australian state/territory contains a coordinate.
+
+    Uses approximate bounding boxes to determine the likely state.
+    ACT is checked first as it's enclosed within NSW.
+
+    Args:
+        latitude: Latitude in degrees.
+        longitude: Longitude in degrees.
+
+    Returns:
+        State code (e.g., 'nsw', 'vic') or None if outside Australia.
+    """
+    # Check ACT first as it's enclosed by NSW
+    act_box = STATE_BOUNDING_BOXES["act"]
+    if act_box[0] <= latitude <= act_box[1] and act_box[2] <= longitude <= act_box[3]:
+        return "act"
+
+    # Check other states
+    for state_code, bbox in STATE_BOUNDING_BOXES.items():
+        if state_code == "act":
+            continue  # Already checked
+        if bbox[0] <= latitude <= bbox[1] and bbox[2] <= longitude <= bbox[3]:
+            return state_code
+
+    return None

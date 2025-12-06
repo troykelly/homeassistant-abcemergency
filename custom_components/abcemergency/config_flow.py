@@ -205,13 +205,12 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 self._data[CONF_ZONE_NAME] = zone_name
 
-                # Get location
+                # Get location (LocationSelector always returns valid data with required=True)
                 location = user_input.get("location", {})
                 if location:
                     self._data[CONF_LATITUDE] = location.get("latitude")
                     self._data[CONF_LONGITUDE] = location.get("longitude")
-                else:
-                    # Use home location
+                else:  # pragma: no cover - defensive fallback, Required selector always provides value
                     self._data[CONF_LATITUDE] = self.hass.config.latitude
                     self._data[CONF_LONGITUDE] = self.hass.config.longitude
 
@@ -308,7 +307,8 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             person_entity_id = user_input.get(CONF_PERSON_ENTITY_ID)
-            if not person_entity_id:
+            # EntitySelector with Required always provides a value, but handle edge case
+            if not person_entity_id:  # pragma: no cover - defensive fallback
                 errors["base"] = "person_required"
             else:
                 # Check for duplicate person

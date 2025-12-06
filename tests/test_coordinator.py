@@ -971,3 +971,626 @@ class TestModels:
         assert incident.distance_km is None
         assert incident.bearing is None
         assert incident.direction is None
+
+
+class TestCoordinatorEdgeCases:
+    """Test edge cases and error handling in coordinator."""
+
+    async def test_unknown_instance_type_raises_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+    ) -> None:
+        """Test unknown instance type raises UpdateFailed."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: "unknown",
+            },
+            unique_id="abc_emergency_unknown",
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            entry,
+            instance_type="unknown",  # type: ignore[arg-type]
+        )
+
+        with pytest.raises(UpdateFailed, match="Unknown instance type"):
+            await coordinator._async_update_data()
+
+    async def test_state_mode_no_state_configured_raises_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+    ) -> None:
+        """Test state mode with no state configured raises UpdateFailed."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
+            },
+            unique_id="abc_emergency_state_empty",
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            entry,
+            instance_type=INSTANCE_TYPE_STATE,
+            state=None,
+        )
+
+        with pytest.raises(UpdateFailed, match="No state configured"):
+            await coordinator._async_update_data()
+
+    async def test_zone_mode_no_location_raises_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+    ) -> None:
+        """Test zone mode with no location raises UpdateFailed."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Test",
+            },
+            unique_id="abc_emergency_zone_test",
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            entry,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=None,
+            longitude=None,
+        )
+
+        with pytest.raises(UpdateFailed, match="No location configured"):
+            await coordinator._async_update_data()
+
+    async def test_zone_mode_outside_australia_raises_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+    ) -> None:
+        """Test zone mode with coordinates outside Australia raises UpdateFailed."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "London",
+                CONF_LATITUDE: 51.5074,  # London
+                CONF_LONGITUDE: -0.1278,
+            },
+            unique_id="abc_emergency_zone_london",
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            entry,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=51.5074,
+            longitude=-0.1278,
+        )
+
+        with pytest.raises(UpdateFailed, match="Could not determine state"):
+            await coordinator._async_update_data()
+
+    async def test_zone_mode_connection_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test zone mode connection error raises UpdateFailed."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=ABCEmergencyConnectionError("Connection failed")
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        with pytest.raises(UpdateFailed, match="Connection error"):
+            await coordinator._async_update_data()
+
+    async def test_zone_mode_api_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test zone mode API error raises UpdateFailed."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=ABCEmergencyAPIError("API error")
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        with pytest.raises(UpdateFailed, match="API error"):
+            await coordinator._async_update_data()
+
+    async def test_person_mode_no_entity_configured_raises_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+    ) -> None:
+        """Test person mode with no entity configured raises UpdateFailed."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON,
+            },
+            unique_id="abc_emergency_person_empty",
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            entry,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id=None,
+        )
+
+        with pytest.raises(UpdateFailed, match="No person entity configured"):
+            await coordinator._async_update_data()
+
+    async def test_person_mode_outside_australia_returns_empty(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+    ) -> None:
+        """Test person mode outside Australia returns empty data with location."""
+        # Set up person entity in London
+        hass.states.async_set(
+            "person.john",
+            "away",
+            {"latitude": 51.5074, "longitude": -0.1278},  # London
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.total_count == 0
+        assert data.location_available is True
+        assert data.current_latitude == 51.5074
+        assert data.current_longitude == -0.1278
+
+    async def test_person_mode_connection_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+    ) -> None:
+        """Test person mode connection error raises UpdateFailed."""
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"latitude": -33.8688, "longitude": 151.2093},
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=ABCEmergencyConnectionError("Connection failed")
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
+        )
+
+        with pytest.raises(UpdateFailed, match="Connection error"):
+            await coordinator._async_update_data()
+
+    async def test_person_mode_api_error(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+    ) -> None:
+        """Test person mode API error raises UpdateFailed."""
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"latitude": -33.8688, "longitude": 151.2093},
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=ABCEmergencyAPIError("API error")
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
+        )
+
+        with pytest.raises(UpdateFailed, match="API error"):
+            await coordinator._async_update_data()
+
+    async def test_timestamp_parsing_error_uses_now(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test timestamp parsing error uses current time."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-test",
+                    "headline": "Test Warning",
+                    "to": "/emergency/warning/AUREMER-test",
+                    "alertLevelInfoPrepared": {
+                        "text": "",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "invalid-date",
+                        "formattedTime": "invalid",
+                        "prefix": "Effective from",
+                        "updatedTime": "not-a-valid-timestamp",  # Invalid
+                    },
+                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
+                    "cardBody": {"type": None, "size": None, "status": "Active", "source": "BOM"},
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.0, -33.5]}],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        # Should have used current time
+        assert data.incidents[0].updated is not None
+
+
+class TestPolygonCentroidCalculation:
+    """Test polygon centroid calculation methods."""
+
+    async def test_polygon_centroid_empty_coords(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test polygon with empty coordinates returns None."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_polygon_centroid(
+            {
+                "type": "Polygon",
+                "coordinates": [],
+                "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+            }
+        )
+        assert result is None
+
+    async def test_multipolygon_centroid_empty_coords(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test multipolygon with empty coordinates returns None."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_multipolygon_centroid(
+            {
+                "type": "MultiPolygon",
+                "coordinates": [],
+                "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+            }
+        )
+        assert result is None
+
+    async def test_polygon_from_polygon_empty_coords(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test nested polygon with empty coordinates returns None."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_polygon_centroid_from_polygon(
+            {"type": "Polygon", "coordinates": []}
+        )
+        assert result is None
+
+    async def test_polygon_centroid_no_valid_points(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test polygon with no valid points returns None."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_polygon_centroid(
+            {
+                "type": "Polygon",
+                "coordinates": [[]],
+                "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+            }
+        )
+        assert result is None
+
+    async def test_multipolygon_centroid_no_valid_points(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test multipolygon with no valid points returns None."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_multipolygon_centroid(
+            {
+                "type": "MultiPolygon",
+                "coordinates": [[[]]],
+                "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+            }
+        )
+        assert result is None
+
+    async def test_polygon_from_polygon_no_valid_points(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test nested polygon with no valid points returns None."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_polygon_centroid_from_polygon(
+            {"type": "Polygon", "coordinates": [[]]}
+        )
+        assert result is None
+
+    async def test_multipolygon_centroid_valid(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test multipolygon with valid coordinates returns centroid."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_multipolygon_centroid(
+            {
+                "type": "MultiPolygon",
+                "coordinates": [
+                    [
+                        [
+                            [150.0, -33.0],
+                            [151.0, -33.0],
+                            [151.0, -34.0],
+                            [150.0, -34.0],
+                            [150.0, -33.0],
+                        ]
+                    ]
+                ],
+                "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+            }
+        )
+        assert result is not None
+        assert result.latitude == pytest.approx(-33.4, abs=0.1)
+        assert result.longitude == pytest.approx(150.4, abs=0.1)
+
+    async def test_nested_polygon_centroid_valid(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test nested polygon geometry with valid coordinates returns centroid."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_polygon_centroid_from_polygon(
+            {
+                "type": "Polygon",
+                "coordinates": [
+                    [[150.0, -33.0], [151.0, -33.0], [151.0, -34.0], [150.0, -34.0], [150.0, -33.0]]
+                ],
+            }
+        )
+        assert result is not None
+        assert result.latitude == pytest.approx(-33.4, abs=0.1)
+        assert result.longitude == pytest.approx(150.4, abs=0.1)
+
+    async def test_polygon_centroid_valid(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test top-level polygon with valid coordinates returns centroid."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        result = coordinator._calculate_polygon_centroid(
+            {
+                "type": "Polygon",
+                "coordinates": [
+                    [[150.0, -33.0], [151.0, -33.0], [151.0, -34.0], [150.0, -34.0], [150.0, -33.0]]
+                ],
+                "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+            }
+        )
+        assert result is not None
+        assert result.latitude == pytest.approx(-33.4, abs=0.1)
+        assert result.longitude == pytest.approx(150.4, abs=0.1)
+
+
+class TestGeometryCoordinateExtraction:
+    """Test coordinate extraction from different geometry types."""
+
+    async def test_extract_location_from_polygon(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test location extraction from top-level Polygon geometry."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        geometry = {
+            "type": "Polygon",
+            "coordinates": [
+                [[150.0, -33.0], [151.0, -33.0], [151.0, -34.0], [150.0, -34.0], [150.0, -33.0]]
+            ],
+            "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+        }
+
+        result = coordinator._extract_location(geometry)
+        assert result is not None
+        assert result.latitude == pytest.approx(-33.4, abs=0.1)
+        assert result.longitude == pytest.approx(150.4, abs=0.1)
+
+    async def test_extract_location_from_geometry_collection_polygon_fallback(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test location extraction from GeometryCollection falls back to polygon."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        geometry = {
+            "type": "GeometryCollection",
+            "geometries": [
+                # No Point geometry, should fall back to Polygon
+                {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [150.0, -33.0],
+                            [151.0, -33.0],
+                            [151.0, -34.0],
+                            [150.0, -34.0],
+                            [150.0, -33.0],
+                        ]
+                    ],
+                }
+            ],
+        }
+
+        result = coordinator._extract_location(geometry)
+        assert result is not None
+        assert result.latitude == pytest.approx(-33.4, abs=0.1)
+        assert result.longitude == pytest.approx(150.4, abs=0.1)

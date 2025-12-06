@@ -178,3 +178,51 @@ class TestGetRadiusCategory:
         assert get_radius_category("Unknown Event") == "other"
         assert get_radius_category("Random Incident") == "other"
         assert get_radius_category("") == "other"
+
+
+class TestGetStateFromCoordinates:
+    """Test state detection from coordinates."""
+
+    def test_act_detection(self) -> None:
+        """Test ACT coordinates are detected correctly."""
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # Canberra City coordinates (within ACT)
+        result = get_state_from_coordinates(-35.28, 149.13)
+        assert result == "act"
+
+    def test_nsw_detection(self) -> None:
+        """Test NSW coordinates are detected correctly."""
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # Sydney coordinates
+        result = get_state_from_coordinates(-33.8688, 151.2093)
+        assert result == "nsw"
+
+    def test_vic_detection(self) -> None:
+        """Test VIC coordinates are detected correctly."""
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # Melbourne coordinates
+        result = get_state_from_coordinates(-37.8136, 144.9631)
+        assert result == "vic"
+
+    def test_qld_detection(self) -> None:
+        """Test QLD coordinates are detected correctly."""
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # Brisbane coordinates
+        result = get_state_from_coordinates(-27.4698, 153.0251)
+        assert result == "qld"
+
+    def test_outside_australia_returns_none(self) -> None:
+        """Test coordinates outside Australia return None."""
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # New Zealand coordinates
+        result = get_state_from_coordinates(-41.2865, 174.7762)
+        assert result is None
+
+        # Northern hemisphere
+        result = get_state_from_coordinates(51.5074, -0.1278)  # London
+        assert result is None

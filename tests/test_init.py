@@ -362,6 +362,29 @@ class TestAsyncMigrateEntry:
         assert result is False
 
 
+class TestAsyncSetupEntryErrors:
+    """Test error handling in async_setup_entry."""
+
+    async def test_unknown_instance_type_returns_false(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that unknown instance type returns False."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: "unknown_type",
+            },
+            unique_id="abc_emergency_unknown",
+        )
+        entry.add_to_hass(hass)
+
+        with patch("custom_components.abcemergency.ABCEmergencyClient"):
+            result = await async_setup_entry(hass, entry)
+
+        assert result is False
+
+
 class TestIntegrationSetup:
     """Integration tests for full setup/unload cycle."""
 

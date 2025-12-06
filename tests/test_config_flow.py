@@ -298,6 +298,34 @@ class TestConfigFlowStateStep:
 class TestConfigFlowZoneSteps:
     """Test the zone configuration flow."""
 
+    async def test_zone_name_empty_shows_error(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test zone name empty shows error."""
+        hass.config.latitude = -33.8688
+        hass.config.longitude = 151.2093
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE},
+        )
+        assert result["step_id"] == "zone_name"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_ZONE_NAME: "",  # Empty name
+                "location": {"latitude": -33.8688, "longitude": 151.2093},
+            },
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "name_required"}
+
     async def test_zone_name_step_proceeds_to_radius(
         self,
         hass: HomeAssistant,
@@ -476,6 +504,82 @@ class TestConfigFlowPersonSteps:
 
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "person"
+
+    async def test_person_name_from_entity_registry(
+        self,
+        hass: HomeAssistant,
+        mock_setup_entry: AsyncMock,
+    ) -> None:
+        """Test person name is taken from entity registry when available."""
+        from homeassistant.helpers import entity_registry as er
+
+        # Create entity in registry with a custom name
+        ent_reg = er.async_get(hass)
+        ent_reg.async_get_or_create(
+            domain="person",
+            platform="test",
+            unique_id="registry_person",
+            suggested_object_id="registry_person",
+        )
+        # Update the entity entry with a name
+        entity_entry = ent_reg.async_get("person.registry_person")
+        if entity_entry:
+            ent_reg.async_update_entity(
+                "person.registry_person",
+                name="Registry Name",
+            )
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_PERSON_ENTITY_ID: "person.registry_person"},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {},
+        )
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_PERSON_NAME] == "Registry Name"
+
+    async def test_person_name_from_entity_id_fallback(
+        self,
+        hass: HomeAssistant,
+        mock_setup_entry: AsyncMock,
+    ) -> None:
+        """Test person name falls back to entity_id when no other name available."""
+        # Create person entity with no friendly_name attribute and no registry name
+        hass.states.async_set(
+            "person.some_user",
+            "home",
+            {},  # No friendly_name attribute
+        )
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_PERSON_ENTITY_ID: "person.some_user"},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {},
+        )
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        # Name should be extracted from entity_id: "some_user" -> "Some User"
+        assert result["data"][CONF_PERSON_NAME] == "Some User"
 
     async def test_person_flow_creates_entry(
         self,

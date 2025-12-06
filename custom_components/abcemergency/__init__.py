@@ -150,8 +150,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_data = dict(entry.data)
         new_data[CONF_INSTANCE_TYPE] = INSTANCE_TYPE_STATE
 
-        # Rename 'state' field if present
-        if CONF_STATE not in new_data and "state" in new_data:
+        # Rename 'state' field if present (CONF_STATE == "state" so this is no-op)
+        if CONF_STATE not in new_data and "state" in new_data:  # pragma: no cover
             new_data[CONF_STATE] = new_data.pop("state")
 
         hass.config_entries.async_update_entry(entry, data=new_data, version=3)

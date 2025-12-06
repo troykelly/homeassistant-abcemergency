@@ -258,3 +258,19 @@ class TestABCEmergencyEntity:
         entity = ABCEmergencyEntity(mock_coordinator, mock_config_entry_state)
 
         assert isinstance(entity, CoordinatorEntity)
+
+    def test_device_info_name_unknown_instance_type(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test device info name for unknown instance type uses default."""
+        entry = MagicMock()
+        entry.entry_id = "test_id_unknown"
+        entry.data = {
+            CONF_INSTANCE_TYPE: "unknown_type",
+        }
+
+        entity = ABCEmergencyEntity(mock_coordinator, entry)
+
+        assert entity._attr_device_info is not None
+        assert entity._attr_device_info.get("name") == "ABC Emergency"

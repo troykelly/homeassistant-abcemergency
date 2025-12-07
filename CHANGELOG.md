@@ -6,11 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-07
+
 ### Added
-- my.home-assistant.io one-click buttons throughout documentation
-- Importable Home Assistant Blueprints for common automations
-- FAQ, Glossary, and improved documentation structure
-- Collapsible technical explanations for beginners
+- my.home-assistant.io one-click buttons throughout documentation for easier navigation
+- Importable Home Assistant Blueprints for common automations (Basic Alert, Tiered Notifications, Distance Escalation, TTS Announcement, Light Alert, Family Safety)
+- FAQ documentation with common questions and answers
+- Glossary of Australian emergency terminology
+- Documentation index (`docs/README.md`) for easier navigation
+- Collapsible technical explanations for beginners throughout documentation
+- Additional shields.io badges for Home Assistant and Python version compatibility
+
+### Changed
+- Improved documentation structure with better organization
+- Event documentation moved to user-facing docs (`docs/automations.md`)
 
 ## [0.2.0] - 2025-12-07
 
@@ -61,9 +70,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.3.0 | 2025-12-07 | Documentation improvements, Blueprints, my.home-assistant.io buttons |
 | 0.2.0 | 2025-12-07 | Instance-based map filtering, new events, enhanced attributes |
 | 0.1.0 | 2025-12-07 | Initial release with all core features |
 
-[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/troykelly/homeassistant-abcemergency/releases/tag/v0.1.0

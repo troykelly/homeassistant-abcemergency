@@ -2,7 +2,27 @@
 
 Ready-to-use Home Assistant automations for ABC Emergency alerts.
 
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/automations/"><img src="https://my.home-assistant.io/badges/automations.svg" alt="View Automations"></a>
+  <a href="https://my.home-assistant.io/redirect/blueprints/"><img src="https://my.home-assistant.io/badges/blueprints.svg" alt="View Blueprints"></a>
+</p>
+
 > **Note:** All examples use placeholder entity names like `abc_emergency_home_*`. Replace `home` with your configured instance name.
+
+---
+
+## Importable Blueprints
+
+Import these ready-to-use blueprints with one click:
+
+| Blueprint | Description | Import |
+|-----------|-------------|--------|
+| **Basic Alert** | Simple notification for any alert | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_basic_alert.yaml) |
+| **Tiered Notifications** | Different priorities by warning level | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_tiered_notifications.yaml) |
+| **Distance Escalation** | Alerts as incidents approach (30km, 15km, 5km) | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_distance_escalation.yaml) |
+| **TTS Announcement** | Announce on smart speakers | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_tts_announcement.yaml) |
+| **Light Alert** | Flash/color lights based on alert level | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_light_alert.yaml) |
+| **Family Safety** | Monitor alerts near family members | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_family_safety.yaml) |
 
 ---
 
@@ -539,6 +559,32 @@ automation:
             Office: {{ states('sensor.abc_emergency_office_incidents_nearby') }} nearby
             Beach House: {{ states('sensor.abc_emergency_beach_house_incidents_nearby') }} nearby
 ```
+
+---
+
+<details>
+<summary>Understanding Jinja2 Templates</summary>
+
+Templates in Home Assistant use Jinja2 syntax to insert dynamic values into text.
+
+**Basic syntax:**
+- `{{ }}` - Output a value
+- `{% %}` - Logic (if/else, loops)
+- `states('entity_id')` - Get entity state
+- `state_attr('entity_id', 'attribute')` - Get attribute
+
+**Example breakdown:**
+```yaml
+message: >
+  {{ state_attr('sensor.abc_emergency_home_nearest_incident', 'headline') }}
+  is {{ states('sensor.abc_emergency_home_nearest_incident') }}km away
+```
+
+This produces: "Milsons Gully Bushfire is 12.4km away"
+
+Test templates in **Developer Tools** -> **Template** before using them.
+
+</details>
 
 ---
 

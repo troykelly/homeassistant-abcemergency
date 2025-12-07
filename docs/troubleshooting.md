@@ -2,6 +2,12 @@
 
 Solutions to common issues with ABC Emergency for Home Assistant.
 
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/logs/"><img src="https://my.home-assistant.io/badges/logs.svg" alt="View Logs"></a>
+  <a href="https://my.home-assistant.io/redirect/developer_states/"><img src="https://my.home-assistant.io/badges/developer_states.svg" alt="Developer States"></a>
+  <a href="https://my.home-assistant.io/redirect/repairs/"><img src="https://my.home-assistant.io/badges/repairs.svg" alt="Repairs"></a>
+</p>
+
 ---
 
 ## Installation Issues
@@ -93,6 +99,8 @@ Solutions to common issues with ABC Emergency for Home Assistant.
 ### Entities Show "Unknown" or "Unavailable"
 
 **Symptom:** Sensors show `unknown` or `unavailable` instead of values.
+
+[![Open Developer Tools States](https://my.home-assistant.io/badges/developer_states.svg)](https://my.home-assistant.io/redirect/developer_states/)
 
 **Solutions:**
 
@@ -195,6 +203,8 @@ The ABC Emergency API doesn't appear to have strict rate limits, but:
 ### Automations Not Triggering
 
 **Symptom:** Automations using ABC Emergency entities don't run.
+
+[![Open Automations](https://my.home-assistant.io/badges/automations.svg)](https://my.home-assistant.io/redirect/automations/)
 
 **Solutions:**
 
@@ -301,6 +311,8 @@ After adding, restart Home Assistant.
 
 ### View Logs
 
+[![Open Logs](https://my.home-assistant.io/badges/logs.svg)](https://my.home-assistant.io/redirect/logs/)
+
 1. **Via UI**
    - Settings → System → Logs
    - Filter by "abcemergency"
@@ -323,6 +335,10 @@ After adding, restart Home Assistant.
 ## Diagnostic Information
 
 ### Download Diagnostics
+
+[![Open Integrations](https://my.home-assistant.io/badges/integrations.svg)](https://my.home-assistant.io/redirect/integrations/)
+
+Navigate to ABC Emergency, or manually:
 
 1. Settings → Devices & Services → ABC Emergency
 2. Click on your instance
@@ -381,6 +397,22 @@ If you can't resolve an issue:
 ---
 
 ## FAQ
+
+<details>
+<summary>Why does data update every 5 minutes?</summary>
+
+The integration polls the ABC Emergency API every 5 minutes. This interval is fixed and cannot be changed.
+
+**Why 5 minutes?**
+1. **Source data freshness** - Emergency services typically update data every few minutes, so polling faster wouldn't give fresher data
+2. **Responsible API usage** - The ABC Emergency service is free and public; we shouldn't overload it
+3. **Battery/resource usage** - More frequent polling means more processing and network usage
+4. **Emergency response** - 5 minutes is fast enough for emergency awareness while being responsible
+
+**What if I need faster updates?**
+For critical situations, rely on official emergency service apps which may push notifications in real-time. ABC Emergency integration is for awareness, not as a primary alert system.
+
+</details>
 
 ### Q: Why is data only updated every 5 minutes?
 

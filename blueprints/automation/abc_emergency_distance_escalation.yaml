@@ -1,0 +1,109 @@
+blueprint:
+  name: ABC Emergency - Distance-Based Escalation
+  description: >
+    Escalating alerts as incidents approach your location.
+    Configurable distance thresholds with increasing urgency.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_distance_escalation.yaml
+  input:
+    nearest_incident_sensor:
+      name: Nearest Incident Sensor
+      description: The nearest incident sensor (e.g., sensor.abc_emergency_home_nearest_incident)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: sensor
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    distance_far:
+      name: Far Distance Threshold (km)
+      description: Distance for initial warning notification
+      default: 30
+      selector:
+        number:
+          min: 10
+          max: 100
+          step: 5
+          unit_of_measurement: km
+    distance_medium:
+      name: Medium Distance Threshold (km)
+      description: Distance for urgent notification
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 50
+          step: 5
+          unit_of_measurement: km
+    distance_close:
+      name: Close Distance Threshold (km)
+      description: Distance for critical notification
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+          step: 1
+          unit_of_measurement: km
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input nearest_incident_sensor
+    below: !input distance_far
+    id: far
+  - platform: numeric_state
+    entity_id: !input nearest_incident_sensor
+    below: !input distance_medium
+    id: medium
+  - platform: numeric_state
+    entity_id: !input nearest_incident_sensor
+    below: !input distance_close
+    id: close
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: close
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "IMMEDIATE DANGER"
+            message: >
+              {{ state_attr(trigger.entity_id, 'headline') }}
+              is only {{ states(trigger.entity_id) }}km away!
+              Consider evacuating!
+            data:
+              priority: critical
+              channel: alarm_stream
+      - conditions:
+          - condition: trigger
+            id: medium
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "EMERGENCY CLOSE BY"
+            message: >
+              {{ state_attr(trigger.entity_id, 'headline') }}
+              is now only {{ states(trigger.entity_id) }}km away!
+            data:
+              priority: high
+      - conditions:
+          - condition: trigger
+            id: far
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "Emergency Approaching"
+            message: >
+              {{ state_attr(trigger.entity_id, 'headline') }}
+              is now {{ states(trigger.entity_id) }}km away

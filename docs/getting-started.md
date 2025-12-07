@@ -2,6 +2,11 @@
 
 This guide walks you through installing and configuring ABC Emergency for Home Assistant.
 
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=troykelly&repository=homeassistant-abcemergency&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Add to HACS"></a>
+  <a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=abcemergency"><img src="https://my.home-assistant.io/badges/config_flow_start.svg" alt="Add Integration"></a>
+</p>
+
 ---
 
 ## Prerequisites
@@ -12,6 +17,18 @@ Before installing, ensure you have:
 - **HACS** (Home Assistant Community Store) installed - [Install HACS](https://hacs.xyz/docs/setup/download)
 - An Australian location configured in Home Assistant (for Zone/Person modes)
 
+<details>
+<summary>What is HACS?</summary>
+
+HACS (Home Assistant Community Store) is a custom integration that provides a UI to manage community-created integrations, themes, and cards. It's not officially part of Home Assistant but is widely used and trusted by the community.
+
+**Key points:**
+- HACS is a one-time install that then manages other custom integrations
+- It provides automatic update notifications for custom integrations
+- Learn more at [hacs.xyz](https://hacs.xyz/)
+
+</details>
+
 ---
 
 ## Installation
@@ -21,6 +38,10 @@ Before installing, ensure you have:
 HACS makes installation and updates easy.
 
 #### Step 1: Add Custom Repository
+
+[![Add Repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=troykelly&repository=homeassistant-abcemergency&category=integration)
+
+Click the button above to add this repository automatically, or manually:
 
 1. Open Home Assistant
 2. Navigate to **HACS** in the sidebar
@@ -65,6 +86,10 @@ If you prefer not to use HACS:
 ## Adding the Integration
 
 After installation and restart:
+
+[![Add ABC Emergency Integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=abcemergency)
+
+Click the button above to add the integration, or manually:
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ Add Integration** (bottom right)
@@ -174,6 +199,10 @@ If using Zone or Person mode with geo-location entities enabled:
 ## Adding Multiple Instances
 
 You can add multiple instances to monitor different areas:
+
+[![Add Another Instance](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=abcemergency)
+
+Or manually:
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **ABC Emergency**

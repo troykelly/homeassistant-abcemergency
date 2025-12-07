@@ -1,0 +1,125 @@
+blueprint:
+  name: ABC Emergency - TTS Announcement
+  description: >
+    Announce emergencies on smart speakers using text-to-speech.
+    Supports configurable minimum alert level and media player selection.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_tts_announcement.yaml
+  input:
+    advice_sensor:
+      name: Advice Level Sensor
+      description: The advice level binary sensor (e.g., binary_sensor.abc_emergency_home_advice)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    watch_and_act_sensor:
+      name: Watch and Act Sensor
+      description: The watch and act binary sensor (e.g., binary_sensor.abc_emergency_home_watch_and_act)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    emergency_warning_sensor:
+      name: Emergency Warning Sensor
+      description: The emergency warning binary sensor (e.g., binary_sensor.abc_emergency_home_emergency_warning)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    nearest_incident_sensor:
+      name: Nearest Incident Sensor
+      description: The nearest incident sensor (e.g., sensor.abc_emergency_home_nearest_incident)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: sensor
+    media_player:
+      name: Media Player
+      description: The speaker to announce on
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+    minimum_alert_level:
+      name: Minimum Alert Level
+      description: The minimum alert level to trigger an announcement
+      default: watch_and_act
+      selector:
+        select:
+          options:
+            - label: Advice (lowest - all alerts)
+              value: advice
+            - label: Watch and Act (medium)
+              value: watch_and_act
+            - label: Emergency Warning (highest - only critical)
+              value: emergency_warning
+    tts_service:
+      name: TTS Service
+      description: The text-to-speech service to use
+      default: tts.google_translate_say
+      selector:
+        select:
+          options:
+            - label: Google Translate TTS
+              value: tts.google_translate_say
+            - label: Google Cloud TTS
+              value: tts.google_cloud_say
+            - label: Amazon Polly
+              value: tts.amazon_polly_say
+            - label: Microsoft TTS
+              value: tts.microsoft_say
+            - label: Piper TTS
+              value: tts.piper_say
+
+trigger:
+  - platform: state
+    entity_id: !input advice_sensor
+    to: "on"
+    id: advice
+  - platform: state
+    entity_id: !input watch_and_act_sensor
+    to: "on"
+    id: watch_and_act
+  - platform: state
+    entity_id: !input emergency_warning_sensor
+    to: "on"
+    id: emergency_warning
+
+condition:
+  - condition: or
+    conditions:
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: emergency_warning
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: watch_and_act
+          - "{{ minimum_alert_level in ['advice', 'watch_and_act'] }}"
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: advice
+          - "{{ minimum_alert_level == 'advice' }}"
+
+variables:
+  minimum_alert_level: !input minimum_alert_level
+  nearest_sensor: !input nearest_incident_sensor
+
+action:
+  - service: !input tts_service
+    target:
+      entity_id: !input media_player
+    data:
+      message: >
+        Attention! Emergency Alert.
+        {{ state_attr(nearest_sensor, 'event_type') | default('Incident') }}
+        detected {{ states(nearest_sensor) | default('unknown') }} kilometres
+        to the {{ state_attr(nearest_sensor, 'direction') | default('nearby') }}.
+        Please check ABC Emergency for more information.

@@ -16,10 +16,21 @@
 </p>
 
 <p align="center">
+  <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/Home%20Assistant-2024.1+-blue?style=flat-square&logo=home-assistant" alt="Home Assistant"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12+-blue?style=flat-square&logo=python" alt="Python"></a>
+  <a href="https://github.com/troykelly/homeassistant-abcemergency/actions"><img src="https://img.shields.io/github/actions/workflow/status/troykelly/homeassistant-abcemergency/ci.yml?style=flat-square&logo=github" alt="CI"></a>
+</p>
+
+<p align="center">
   <a href="#-quick-start">Quick Start</a> &bull;
   <a href="docs/getting-started.md">Installation Guide</a> &bull;
   <a href="docs/automations.md">Automations</a> &bull;
   <a href="docs/troubleshooting.md">Troubleshooting</a>
+</p>
+
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=troykelly&repository=homeassistant-abcemergency&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Add to HACS"></a>
+  <a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=abcemergency"><img src="https://my.home-assistant.io/badges/config_flow_start.svg" alt="Add Integration"></a>
 </p>
 
 ---
@@ -84,6 +95,10 @@ This integration uses the official [Australian Warning System](https://www.austr
 
 ### 1. Install via HACS
 
+[![Add Repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=troykelly&repository=homeassistant-abcemergency&category=integration)
+
+Click the button above to add this repository to HACS, or manually:
+
 1. Open HACS in Home Assistant
 2. Click the three dots menu → **Custom repositories**
 3. Add: `https://github.com/troykelly/homeassistant-abcemergency`
@@ -92,6 +107,10 @@ This integration uses the official [Australian Warning System](https://www.austr
 6. **Restart Home Assistant**
 
 ### 2. Add the Integration
+
+[![Add ABC Emergency Integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=abcemergency)
+
+Click the button above to add the integration, or manually:
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **Add Integration**
@@ -135,6 +154,9 @@ automation:
 | [Notifications](docs/notifications.md) | Mobile alerts, critical notifications, TTS |
 | [Scripts](docs/scripts.md) | Emergency briefings, evacuation checklists |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
+| [FAQ](docs/faq.md) | Frequently asked questions |
+| [Glossary](docs/glossary.md) | Term definitions |
+| [Changelog](CHANGELOG.md) | Version history |
 | [Advanced Usage](docs/advanced.md) | Templates, Node-RED, AppDaemon |
 
 ---

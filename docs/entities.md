@@ -2,6 +2,10 @@
 
 Complete documentation for all entities created by ABC Emergency for Home Assistant.
 
+[![Open Developer Tools States](https://my.home-assistant.io/badges/developer_states.svg)](https://my.home-assistant.io/redirect/developer_states/)
+
+Use Developer Tools to view entity states in your Home Assistant instance.
+
 ---
 
 ## Entity Naming Convention
@@ -21,6 +25,37 @@ Where:
 - `sensor.abc_emergency_home_incidents_total`
 - `binary_sensor.abc_emergency_nsw_emergency_warning`
 - `sensor.abc_emergency_dad_nearest_incident`
+
+<details>
+<summary>How do Entity IDs work?</summary>
+
+Entity IDs in Home Assistant follow a pattern: `domain.unique_name`
+
+For ABC Emergency:
+```
+sensor.abc_emergency_home_incidents_total
+│      │              │    └── Entity type
+│      │              └── Your instance name
+│      └── Integration name
+└── Entity domain (sensor, binary_sensor, etc.)
+```
+
+Your instance name comes from what you configured during setup. If you named your zone "Home", entities use `home`. If "Beach House", they use `beach_house`.
+
+</details>
+
+<details>
+<summary>What is a Binary Sensor?</summary>
+
+A binary sensor is a Home Assistant entity that can only be in one of two states: **on** or **off**.
+
+For ABC Emergency, binary sensors indicate whether a condition is true:
+- `on` = Alert is active
+- `off` = No alert
+
+Binary sensors are ideal for automation triggers because the state change from `off` to `on` is easy to detect.
+
+</details>
 
 ---
 
@@ -559,7 +594,11 @@ The `event_type` attribute can contain various values depending on the incident:
 
 For troubleshooting, entities include diagnostic information accessible via:
 
-**Settings** → **Devices & Services** → **ABC Emergency** → **[Your Instance]** → **Download Diagnostics**
+[![Open Integrations](https://my.home-assistant.io/badges/integrations.svg)](https://my.home-assistant.io/redirect/integrations/)
+
+Navigate to **ABC Emergency** → **[Your Instance]** → **Download Diagnostics**
+
+Or manually: **Settings** → **Devices & Services** → **ABC Emergency** → **[Your Instance]** → **Download Diagnostics**
 
 This includes:
 - Current sensor states

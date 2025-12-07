@@ -14,6 +14,38 @@ ABC Emergency supports three monitoring modes, each with different configuration
 | **Zone Mode** | Monitor incidents near a fixed location | User-defined coordinates |
 | **Person Mode** | Monitor incidents near a moving person | Person entity's GPS location |
 
+<details>
+<summary>When should I use Zone vs Person mode?</summary>
+
+**Use Zone Mode when:**
+- You want to monitor a fixed location (home, office, farm)
+- The location doesn't change
+- You want consistent radius settings
+
+**Use Person Mode when:**
+- You want to track emergencies near someone as they move
+- The person has the Home Assistant Companion App installed
+- You want to keep family members informed about their surroundings
+
+**Technical difference:** Zone mode uses static coordinates you configure, while Person mode reads real-time GPS coordinates from a `person.*` entity.
+
+</details>
+
+<details>
+<summary>Understanding the Australian Warning System</summary>
+
+The Australian Warning System is a national framework for emergency warnings used by all states and territories.
+
+| Level | Color | Icon | Meaning |
+|-------|-------|------|---------|
+| **Emergency Warning** | Red | Warning triangle | You may be in danger and need to take action immediately |
+| **Watch and Act** | Orange | Warning triangle | There is a heightened level of threat. Conditions are changing and you need to start taking action now |
+| **Advice** | Yellow | Information icon | An incident has started. Stay informed and monitor conditions |
+
+Learn more: [australianwarningsystem.com.au](https://www.australianwarningsystem.com.au/)
+
+</details>
+
 ---
 
 ## State Mode Configuration
@@ -63,6 +95,10 @@ State Mode has minimal configuration - just the state selection. There's no radi
 Zone Mode monitors emergencies within configurable distances of a fixed location.
 
 ### Initial Setup
+
+[![Open Zones](https://my.home-assistant.io/badges/zones.svg)](https://my.home-assistant.io/redirect/zones/)
+
+If you want to use an existing Home Assistant zone, view your zones first.
 
 1. Select **"Monitor a fixed location (zone)"**
 2. Enter a **name** for the zone (e.g., "Home", "Office", "Farm")
@@ -136,6 +172,8 @@ Person Mode monitors emergencies near a person's current location as they move.
 
 ### Prerequisites
 
+[![Open People](https://my.home-assistant.io/badges/people.svg)](https://my.home-assistant.io/redirect/people/)
+
 You need a `person.*` entity with location tracking:
 
 1. **Home Assistant Companion App** - Provides GPS location
@@ -194,6 +232,10 @@ You can run multiple instances of ABC Emergency simultaneously.
 
 ### Adding Another Instance
 
+[![Add Integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=abcemergency)
+
+Or manually:
+
 1. Go to **Settings** → **Devices & Services**
 2. Click **ABC Emergency**
 3. Click **+ Add Entry**
@@ -242,6 +284,10 @@ You can run multiple instances of ABC Emergency simultaneously.
 Most configuration can be modified after setup without removing the integration.
 
 ### Accessing Options
+
+[![Open Integrations](https://my.home-assistant.io/badges/integrations.svg)](https://my.home-assistant.io/redirect/integrations/)
+
+Navigate to your ABC Emergency integration, or manually:
 
 1. **Settings** → **Devices & Services**
 2. Find **ABC Emergency**

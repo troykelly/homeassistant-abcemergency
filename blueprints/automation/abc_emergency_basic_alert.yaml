@@ -1,0 +1,46 @@
+blueprint:
+  name: ABC Emergency - Basic Alert
+  description: >
+    Send a notification when any emergency alert is active near your location.
+    Uses ABC Emergency for Home Assistant integration.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_basic_alert.yaml
+  input:
+    abc_emergency_binary_sensor:
+      name: ABC Emergency Alert Sensor
+      description: The ABC Emergency binary sensor to monitor (e.g., binary_sensor.abc_emergency_home_advice)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    abc_emergency_nearest_sensor:
+      name: ABC Emergency Nearest Incident Sensor
+      description: The nearest incident sensor for this instance (e.g., sensor.abc_emergency_home_nearest_incident)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: sensor
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+
+trigger:
+  - platform: state
+    entity_id: !input abc_emergency_binary_sensor
+    to: "on"
+
+action:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "Emergency Alert"
+    message: >
+      {% set sensor = '!input abc_emergency_nearest_sensor' %}
+      {{ state_attr(sensor, 'headline') | default('Emergency incident detected') }}
+      ({{ states(sensor) | default('unknown') }}km away)

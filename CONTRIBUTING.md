@@ -124,7 +124,7 @@ If your implementation fails twice:
 
 ### Workflow
 
-1. Check the [project board](https://github.com/users/troykelly/projects/3) for issues
+1. Check the [project board](https://github.com/users/troykelly/projects/6) for issues
 2. Create an issue if one doesn't exist for your work
 3. Create a branch: `issue-{N}-{short-description}`
 4. Commit with issue reference: `type(scope): message (#N)`

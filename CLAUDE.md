@@ -30,7 +30,7 @@ ABC Emergency is the Australian Broadcasting Corporation's emergency information
 
 | Item | Value |
 |------|-------|
-| Project URL | https://github.com/users/troykelly/projects/3 |
+| Project URL | https://github.com/users/troykelly/projects/6 |
 | Project Name | Home Assistant ABC Emergency Component |
 | Repository | troykelly/homeassistant-abcemergency |
 

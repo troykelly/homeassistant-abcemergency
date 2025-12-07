@@ -31,7 +31,7 @@ from .const import (
 )
 from .coordinator import ABCEmergencyCoordinator
 from .entity import ABCEmergencyEntity
-from .models import CoordinatorData
+from .models import CoordinatorData, EmergencyIncident
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -58,6 +58,54 @@ def _get_nearest_incident_attrs(data: CoordinatorData) -> dict[str, Any]:
     }
 
 
+def _incident_to_dict(incident: EmergencyIncident) -> dict[str, Any]:
+    """Convert an EmergencyIncident to a dictionary with standard key fields.
+
+    Args:
+        incident: The emergency incident to convert.
+
+    Returns:
+        Dictionary containing headline, alert_level, event_type, distance_km, direction.
+    """
+    return {
+        "headline": incident.headline,
+        "alert_level": incident.alert_level,
+        "event_type": incident.event_type,
+        "distance_km": incident.distance_km,
+        "direction": incident.direction,
+    }
+
+
+def _get_incidents_list_attrs(data: CoordinatorData) -> dict[str, Any]:
+    """Get incidents list attribute for count sensors.
+
+    Args:
+        data: Coordinator data containing incidents.
+
+    Returns:
+        Dictionary with 'incidents' key containing list of incident details.
+    """
+    if not data.incidents:
+        return {"incidents": []}
+    return {"incidents": [_incident_to_dict(i) for i in data.incidents]}
+
+
+def _get_incidents_list_by_type_attrs(data: CoordinatorData, event_type: str) -> dict[str, Any]:
+    """Get incidents list attribute filtered by event type.
+
+    Args:
+        data: Coordinator data containing incidents.
+        event_type: The event type to filter by (e.g., "Bushfire", "Flood", "Storm").
+
+    Returns:
+        Dictionary with 'incidents' key containing list of matching incident details.
+    """
+    if not data.incidents:
+        return {"incidents": []}
+    matching = [i for i in data.incidents if i.event_type == event_type]
+    return {"incidents": [_incident_to_dict(i) for i in matching]}
+
+
 # Sensors for all instance types
 COMMON_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
     ABCEmergencySensorEntityDescription(
@@ -66,6 +114,7 @@ COMMON_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
         native_unit_of_measurement=None,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.total_count,
+        attr_fn=_get_incidents_list_attrs,
     ),
     ABCEmergencySensorEntityDescription(
         key="highest_alert_level",
@@ -77,18 +126,21 @@ COMMON_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
         translation_key="bushfires",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.incidents_by_type.get("Bushfire", 0),
+        attr_fn=lambda data: _get_incidents_list_by_type_attrs(data, "Bushfire"),
     ),
     ABCEmergencySensorEntityDescription(
         key="floods",
         translation_key="floods",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.incidents_by_type.get("Flood", 0),
+        attr_fn=lambda data: _get_incidents_list_by_type_attrs(data, "Flood"),
     ),
     ABCEmergencySensorEntityDescription(
         key="storms",
         translation_key="storms",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.incidents_by_type.get("Storm", 0),
+        attr_fn=lambda data: _get_incidents_list_by_type_attrs(data, "Storm"),
     ),
 )
 
@@ -100,6 +152,7 @@ LOCATION_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = 
         native_unit_of_measurement=None,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.nearby_count if data.nearby_count is not None else 0,
+        attr_fn=_get_incidents_list_attrs,
         location_only=True,
     ),
     ABCEmergencySensorEntityDescription(

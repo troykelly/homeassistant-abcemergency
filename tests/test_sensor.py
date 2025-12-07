@@ -23,6 +23,8 @@ from custom_components.abcemergency.sensor import (
     COMMON_SENSOR_DESCRIPTIONS,
     LOCATION_SENSOR_DESCRIPTIONS,
     ABCEmergencySensor,
+    _get_incidents_list_attrs,
+    _get_incidents_list_by_type_attrs,
     _get_nearest_incident_attrs,
     async_setup_entry,
 )
@@ -77,16 +79,29 @@ class TestSensorDescriptions:
         """Test bushfires sensor description."""
         desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "bushfires")
         assert desc.translation_key == "bushfires"
+        assert desc.attr_fn is not None  # Should have incidents list attr_fn
 
     def test_floods_description(self) -> None:
         """Test floods sensor description."""
         desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "floods")
         assert desc.translation_key == "floods"
+        assert desc.attr_fn is not None  # Should have incidents list attr_fn
 
     def test_storms_description(self) -> None:
         """Test storms sensor description."""
         desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "storms")
         assert desc.translation_key == "storms"
+        assert desc.attr_fn is not None  # Should have incidents list attr_fn
+
+    def test_incidents_total_has_attr_fn(self) -> None:
+        """Test incidents_total sensor has attr_fn for incidents list."""
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+        assert desc.attr_fn is not None
+
+    def test_incidents_nearby_has_attr_fn(self) -> None:
+        """Test incidents_nearby sensor has attr_fn for incidents list."""
+        desc = next(d for d in LOCATION_SENSOR_DESCRIPTIONS if d.key == "incidents_nearby")
+        assert desc.attr_fn is not None
 
 
 class TestGetNearestIncidentAttrs:
@@ -110,6 +125,109 @@ class TestGetNearestIncidentAttrs:
         assert result["alert_level"] == AlertLevel.EMERGENCY
         assert result["event_type"] == "Bushfire"
         assert result["direction"] == "S"
+
+
+class TestGetIncidentsListAttrs:
+    """Test the _get_incidents_list_attrs helper function."""
+
+    def test_returns_empty_list_when_no_incidents(
+        self,
+        mock_coordinator_data_empty: CoordinatorData,
+    ) -> None:
+        """Test returns empty incidents list when no incidents."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_empty)
+        assert result == {"incidents": []}
+
+    def test_returns_all_incidents_with_standard_fields(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test returns all incidents with standard key fields."""
+        result = _get_incidents_list_attrs(mock_coordinator_data)
+        assert "incidents" in result
+        assert len(result["incidents"]) == 3
+
+        # Check first incident (bushfire - nearest)
+        first = result["incidents"][0]
+        assert first["headline"] == "Bushfire at Test Location"
+        assert first["alert_level"] == AlertLevel.EMERGENCY
+        assert first["event_type"] == "Bushfire"
+        assert first["distance_km"] == 10.5
+        assert first["direction"] == "S"
+
+        # Check second incident (flood)
+        second = result["incidents"][1]
+        assert second["headline"] == "Flood Warning at River Area"
+        assert second["alert_level"] == AlertLevel.WATCH_AND_ACT
+        assert second["event_type"] == "Flood"
+        assert second["distance_km"] == 25.3
+        assert second["direction"] == "NW"
+
+    def test_returns_null_distance_for_state_mode(
+        self,
+        mock_coordinator_data_state: CoordinatorData,
+    ) -> None:
+        """Test returns null distance/direction for state mode incidents."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_state)
+        assert "incidents" in result
+        assert len(result["incidents"]) == 3
+
+        # All should have null distance and direction
+        for incident in result["incidents"]:
+            assert incident["distance_km"] is None
+            assert incident["direction"] is None
+
+
+class TestGetIncidentsListByTypeAttrs:
+    """Test the _get_incidents_list_by_type_attrs helper function."""
+
+    def test_returns_empty_list_for_missing_type(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test returns empty list when event type not present."""
+        result = _get_incidents_list_by_type_attrs(mock_coordinator_data, "Cyclone")
+        assert result == {"incidents": []}
+
+    def test_returns_only_matching_type(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test returns only incidents matching the specified type."""
+        result = _get_incidents_list_by_type_attrs(mock_coordinator_data, "Bushfire")
+        assert "incidents" in result
+        assert len(result["incidents"]) == 1
+
+        incident = result["incidents"][0]
+        assert incident["headline"] == "Bushfire at Test Location"
+        assert incident["event_type"] == "Bushfire"
+        assert incident["distance_km"] == 10.5
+
+    def test_returns_floods_only(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test filtering for floods."""
+        result = _get_incidents_list_by_type_attrs(mock_coordinator_data, "Flood")
+        assert len(result["incidents"]) == 1
+        assert result["incidents"][0]["event_type"] == "Flood"
+
+    def test_returns_storms_only(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test filtering for storms."""
+        result = _get_incidents_list_by_type_attrs(mock_coordinator_data, "Storm")
+        assert len(result["incidents"]) == 1
+        assert result["incidents"][0]["event_type"] == "Storm"
+
+    def test_returns_empty_when_no_incidents(
+        self,
+        mock_coordinator_data_empty: CoordinatorData,
+    ) -> None:
+        """Test returns empty list when no incidents at all."""
+        result = _get_incidents_list_by_type_attrs(mock_coordinator_data_empty, "Bushfire")
+        assert result == {"incidents": []}
 
 
 class TestSensorValueFunctions:
@@ -273,11 +391,111 @@ class TestABCEmergencySensor:
             },
             unique_id="abc_emergency_state_nsw",
         )
-        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+        # highest_alert_level is the only sensor without an attr_fn now
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "highest_alert_level")
 
         sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
 
         assert sensor.extra_state_attributes is None
+
+    def test_sensor_extra_state_attributes_incidents_total(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test incidents_total sensor returns incidents list attribute."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "incidents" in attrs
+        assert len(attrs["incidents"]) == 3
+
+    def test_sensor_extra_state_attributes_bushfires(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test bushfires sensor returns only bushfire incidents in attributes."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "bushfires")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "incidents" in attrs
+        assert len(attrs["incidents"]) == 1
+        assert attrs["incidents"][0]["event_type"] == "Bushfire"
+
+    def test_sensor_extra_state_attributes_floods(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test floods sensor returns only flood incidents in attributes."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "floods")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "incidents" in attrs
+        assert len(attrs["incidents"]) == 1
+        assert attrs["incidents"][0]["event_type"] == "Flood"
+
+    def test_sensor_extra_state_attributes_storms(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test storms sensor returns only storm incidents in attributes."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "storms")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "incidents" in attrs
+        assert len(attrs["incidents"]) == 1
+        assert attrs["incidents"][0]["event_type"] == "Storm"
 
 
 class TestAsyncSetupEntry:

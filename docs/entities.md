@@ -43,6 +43,34 @@ These sensors are created for State, Zone, and Person modes.
 
 **Example state:** `42`
 
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of all incidents with details |
+
+Each incident in the `incidents` list contains:
+- `headline` (string): Incident location description
+- `alert_level` (string): Warning level (extreme, severe, moderate, minor)
+- `event_type` (string): Type of incident (Bushfire, Flood, Storm, etc.)
+- `distance_km` (float\|null): Distance from monitored location in km
+- `direction` (string\|null): Compass direction (N, NE, E, etc.)
+
+**Example attributes:**
+```yaml
+incidents:
+  - headline: "Milsons Gully"
+    alert_level: "extreme"
+    event_type: "Bushfire"
+    distance_km: 12.4
+    direction: "NW"
+  - headline: "Mount Victoria"
+    alert_level: "severe"
+    event_type: "Bushfire"
+    distance_km: 28.7
+    direction: "W"
+```
+
 ---
 
 #### highest_alert_level
@@ -81,6 +109,24 @@ These sensors are created for State, Zone, and Person modes.
 
 **Example state:** `7`
 
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of bushfire incidents only |
+
+Each incident contains: `headline`, `alert_level`, `event_type`, `distance_km`, `direction`
+
+**Example attributes:**
+```yaml
+incidents:
+  - headline: "Milsons Gully"
+    alert_level: "extreme"
+    event_type: "Bushfire"
+    distance_km: 12.4
+    direction: "NW"
+```
+
 ---
 
 #### floods
@@ -96,6 +142,14 @@ These sensors are created for State, Zone, and Person modes.
 
 **Example state:** `3`
 
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of flood incidents only |
+
+Each incident contains: `headline`, `alert_level`, `event_type`, `distance_km`, `direction`
+
 ---
 
 #### storms
@@ -110,6 +164,14 @@ These sensors are created for State, Zone, and Person modes.
 **Description:** Count of active storm/severe weather incidents.
 
 **Example state:** `12`
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of storm incidents only |
+
+Each incident contains: `headline`, `alert_level`, `event_type`, `distance_km`, `direction`
 
 ---
 
@@ -129,6 +191,34 @@ These sensors are only created for Zone and Person mode instances (not State mod
 **Description:** Count of incidents within your configured alert radii. Different incident types have different radii (e.g., bushfires 50km, structure fires 10km).
 
 **Example state:** `2`
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of nearby incidents with details |
+
+Each incident in the `incidents` list contains:
+- `headline` (string): Incident location description
+- `alert_level` (string): Warning level (extreme, severe, moderate, minor)
+- `event_type` (string): Type of incident (Bushfire, Flood, Storm, etc.)
+- `distance_km` (float): Distance from monitored location in km
+- `direction` (string): Compass direction (N, NE, E, etc.)
+
+**Example attributes:**
+```yaml
+incidents:
+  - headline: "Milsons Gully"
+    alert_level: "extreme"
+    event_type: "Bushfire"
+    distance_km: 12.4
+    direction: "NW"
+  - headline: "Severe Thunderstorm"
+    alert_level: "moderate"
+    event_type: "Storm"
+    distance_km: 45.0
+    direction: "SE"
+```
 
 ---
 
@@ -349,6 +439,38 @@ condition:
   - condition: template
     value_template: >
       {{ state_attr('sensor.abc_emergency_home_nearest_incident', 'event_type') == 'Bushfire' }}
+```
+
+### Using Incidents List in Messages
+
+Access the list of incidents from count sensors:
+
+```yaml
+action:
+  - service: notify.mobile_app_phone
+    data:
+      title: "{{ states('sensor.abc_emergency_home_bushfires') }} Active Bushfires"
+      message: >
+        {% set fires = state_attr('sensor.abc_emergency_home_bushfires', 'incidents') %}
+        {% for fire in fires %}
+        - {{ fire.headline }} ({{ fire.distance_km }}km {{ fire.direction }}) - {{ fire.alert_level }}
+        {% endfor %}
+```
+
+### Iterating Over All Nearby Incidents
+
+```yaml
+# Create a summary of all nearby incidents
+action:
+  - service: notify.mobile_app_phone
+    data:
+      title: "Emergency Update"
+      message: >
+        {% set incidents = state_attr('sensor.abc_emergency_home_incidents_nearby', 'incidents') %}
+        {{ incidents | length }} incidents nearby:
+        {% for inc in incidents %}
+        - {{ inc.event_type }}: {{ inc.headline }} ({{ inc.distance_km }}km)
+        {% endfor %}
 ```
 
 ---

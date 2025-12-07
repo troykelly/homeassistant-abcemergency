@@ -177,6 +177,19 @@ class TestGetIncidentsListAttrs:
             assert incident["distance_km"] is None
             assert incident["direction"] is None
 
+    def test_returns_incident_id_in_attributes(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test returns incident ID in attributes."""
+        result = _get_incidents_list_attrs(mock_coordinator_data)
+        assert "incidents" in result
+
+        # Check all incidents have ID field
+        for incident in result["incidents"]:
+            assert "id" in incident
+            assert incident["id"] is not None
+
 
 class TestGetIncidentsListByTypeAttrs:
     """Test the _get_incidents_list_by_type_attrs helper function."""

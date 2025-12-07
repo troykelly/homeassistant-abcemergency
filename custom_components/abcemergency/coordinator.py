@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Literal, cast
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -76,6 +77,10 @@ ALERT_LEVEL_PRIORITY: dict[str, int] = {
     "": 0,
 }
 
+# Storage configuration for incident ID persistence
+STORAGE_VERSION = 1
+STORAGE_KEY_PREFIX = f"{DOMAIN}_seen_incidents"
+
 
 class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
     """Coordinator for ABC Emergency data.
@@ -129,6 +134,17 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         # Radii configuration (for zone/person modes)
         self._radii: dict[str, int] = self._load_radii()
 
+        # Incident tracking for event firing
+        self._seen_incident_ids: set[str] = set()
+        self._first_refresh: bool = True
+
+        # Storage for persisting seen incident IDs
+        self._store: Store[dict[str, list[str]]] = Store(
+            hass,
+            STORAGE_VERSION,
+            f"{STORAGE_KEY_PREFIX}_{entry.entry_id}",
+        )
+
     def _load_radii(self) -> dict[str, int]:
         """Load radius configuration from entry data/options."""
 
@@ -151,6 +167,29 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         category = INCIDENT_TYPE_TO_RADIUS_CATEGORY.get(event_type, "other")
         return self._radii.get(category, self._radii["other"])
 
+    async def async_load_seen_incidents(self) -> None:
+        """Load previously seen incident IDs from storage.
+
+        This allows the coordinator to resume tracking after a Home Assistant
+        restart without re-announcing previously seen incidents.
+        """
+        data = await self._store.async_load()
+        if data and "seen_ids" in data:
+            self._seen_incident_ids = set(data["seen_ids"])
+            self._first_refresh = False  # Not first if we have history
+            _LOGGER.debug(
+                "Loaded %d previously seen incident IDs from storage",
+                len(self._seen_incident_ids),
+            )
+
+    async def _save_seen_incidents(self) -> None:
+        """Save seen incident IDs to storage."""
+        await self._store.async_save({"seen_ids": list(self._seen_incident_ids)})
+
+    async def async_remove_storage(self) -> None:
+        """Remove storage file when config entry is removed."""
+        await self._store.async_remove()
+
     async def _async_update_data(self) -> CoordinatorData:
         """Fetch and process emergency data.
 
@@ -161,13 +200,41 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             UpdateFailed: If fetching or processing data fails.
         """
         if self._instance_type == INSTANCE_TYPE_STATE:
-            return await self._update_state_mode()
-        if self._instance_type == INSTANCE_TYPE_ZONE:
-            return await self._update_zone_mode()
-        if self._instance_type == INSTANCE_TYPE_PERSON:
-            return await self._update_person_mode()
+            data = await self._update_state_mode()
+        elif self._instance_type == INSTANCE_TYPE_ZONE:
+            data = await self._update_zone_mode()
+        elif self._instance_type == INSTANCE_TYPE_PERSON:
+            data = await self._update_person_mode()
+        else:
+            raise UpdateFailed(f"Unknown instance type: {self._instance_type}")
 
-        raise UpdateFailed(f"Unknown instance type: {self._instance_type}")
+        # Detect new incidents and fire events
+        await self._handle_new_incident_detection(data)
+
+        return data
+
+    async def _handle_new_incident_detection(self, data: CoordinatorData) -> None:
+        """Detect new incidents and fire events for them.
+
+        Args:
+            data: The processed coordinator data.
+        """
+        # Get current incident IDs
+        current_ids = {incident.id for incident in data.incidents}
+
+        # Detect new incidents (skip first refresh to avoid spam on startup)
+        if not self._first_refresh:
+            new_ids = current_ids - self._seen_incident_ids
+            if new_ids:
+                new_incidents = [i for i in data.incidents if i.id in new_ids]
+                await self._fire_new_incident_events(new_incidents)
+
+        # Update tracking state
+        self._seen_incident_ids = current_ids
+        self._first_refresh = False
+
+        # Persist to storage
+        await self._save_seen_incidents()
 
     async def _update_state_mode(self) -> CoordinatorData:
         """Fetch data for state mode (all incidents in a state)."""
@@ -586,3 +653,68 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 highest_level = level
 
         return highest_level
+
+    def _slugify_event_type(self, event_type: str) -> str:
+        """Convert event type to slug format for event names.
+
+        Args:
+            event_type: Event type like "Bushfire", "Extreme Heat".
+
+        Returns:
+            Slugified string like "bushfire", "extreme_heat".
+        """
+        return event_type.lower().replace(" ", "_")
+
+    async def _fire_new_incident_events(
+        self,
+        new_incidents: list[EmergencyIncident],
+    ) -> None:
+        """Fire events for new incidents.
+
+        Fires both a generic abc_emergency_new_incident event and a
+        type-specific event (e.g., abc_emergency_new_bushfire) for each
+        new incident detected.
+
+        Args:
+            new_incidents: List of newly detected incidents.
+        """
+        for incident in new_incidents:
+            event_data = {
+                "config_entry_id": self._entry.entry_id,
+                "instance_name": self._entry.title or "ABC Emergency",
+                "instance_type": self._instance_type,
+                "incident_id": incident.id,
+                "headline": incident.headline,
+                "event_type": incident.event_type,
+                "event_icon": incident.event_icon,
+                "alert_level": incident.alert_level,
+                "alert_text": incident.alert_text,
+                "distance_km": incident.distance_km,
+                "direction": incident.direction,
+                "bearing": incident.bearing,
+                "latitude": incident.location.latitude,
+                "longitude": incident.location.longitude,
+                "status": incident.status,
+                "size": incident.size,
+                "source": incident.source,
+                "updated": incident.updated.isoformat(),
+            }
+
+            # Fire generic event
+            self.hass.bus.async_fire(
+                "abc_emergency_new_incident",
+                event_data,
+            )
+
+            # Fire type-specific event
+            type_slug = self._slugify_event_type(incident.event_type)
+            self.hass.bus.async_fire(
+                f"abc_emergency_new_{type_slug}",
+                event_data,
+            )
+
+            _LOGGER.info(
+                "New %s incident detected: %s",
+                incident.event_type,
+                incident.headline,
+            )

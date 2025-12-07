@@ -65,9 +65,10 @@ def _incident_to_dict(incident: EmergencyIncident) -> dict[str, Any]:
         incident: The emergency incident to convert.
 
     Returns:
-        Dictionary containing headline, alert_level, event_type, distance_km, direction.
+        Dictionary containing id, headline, alert_level, event_type, distance_km, direction.
     """
     return {
+        "id": incident.id,
         "headline": incident.headline,
         "alert_level": incident.alert_level,
         "event_type": incident.event_type,

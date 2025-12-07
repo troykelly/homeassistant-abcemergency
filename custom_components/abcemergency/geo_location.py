@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SOURCE
+from .const import DOMAIN
 from .coordinator import ABCEmergencyCoordinator
 from .models import EmergencyIncident
 
@@ -23,6 +23,21 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _get_instance_source(entry: ConfigEntry) -> str:
+    """Generate an instance-based source identifier for geo-location filtering.
+
+    Uses the config entry title directly (e.g., "ABC Emergency (Treehouse)")
+    as the source for map card filtering.
+
+    Args:
+        entry: The config entry for this integration instance.
+
+    Returns:
+        The entry title as the source string, or a default if no title.
+    """
+    return entry.title or "ABC Emergency"
 
 
 class ABCEmergencyGeolocationEvent(
@@ -38,22 +53,25 @@ class ABCEmergencyGeolocationEvent(
         self,
         coordinator: ABCEmergencyCoordinator,
         incident: EmergencyIncident,
+        instance_source: str = "abc_emergency",
     ) -> None:
         """Initialize the geo location event.
 
         Args:
             coordinator: The data update coordinator.
             incident: The emergency incident data.
+            instance_source: The source identifier for this instance (e.g., abc_emergency_treehouse).
         """
         super().__init__(coordinator)
         self._incident = incident
-        self._attr_unique_id = f"{SOURCE}_{incident.id}"
+        self._instance_source = instance_source
+        self._attr_unique_id = f"{instance_source}_{incident.id}"
         self._attr_name = incident.headline
 
     @property
     def source(self) -> str:
-        """Return source of the event."""
-        return SOURCE
+        """Return source of the event for map filtering."""
+        return self._instance_source
 
     @property
     def latitude(self) -> float | None:
@@ -79,7 +97,7 @@ class ABCEmergencyGeolocationEvent(
             "event_type": self._incident.event_type,
             "event_icon": self._incident.event_icon,
             "status": self._incident.status,
-            "source": self._incident.source,
+            "agency": self._incident.source,  # Renamed from 'source' to avoid conflict with geo_location source property
             "direction": self._incident.direction,
             "updated": self._incident.updated.isoformat(),
         }
@@ -112,6 +130,7 @@ class ABCEmergencyGeoLocationManager:
         hass: HomeAssistant,
         coordinator: ABCEmergencyCoordinator,
         async_add_entities: AddEntitiesCallback,
+        instance_source: str = "abc_emergency",
     ) -> None:
         """Initialize the manager.
 
@@ -119,10 +138,12 @@ class ABCEmergencyGeoLocationManager:
             hass: Home Assistant instance.
             coordinator: The data update coordinator.
             async_add_entities: Callback to add entities.
+            instance_source: The source identifier for this instance (e.g., abc_emergency_treehouse).
         """
         self._hass = hass
         self._coordinator = coordinator
         self._async_add_entities = async_add_entities
+        self._instance_source = instance_source
         self._entities: dict[str, ABCEmergencyGeolocationEvent] = {}
 
     @callback
@@ -139,7 +160,9 @@ class ABCEmergencyGeoLocationManager:
         if new_ids:
             new_incidents = [i for i in self._coordinator.data.incidents if i.id in new_ids]
             new_entities = [
-                ABCEmergencyGeolocationEvent(self._coordinator, incident)
+                ABCEmergencyGeolocationEvent(
+                    self._coordinator, incident, instance_source=self._instance_source
+                )
                 for incident in new_incidents
             ]
             self._async_add_entities(new_entities)
@@ -168,7 +191,12 @@ async def async_setup_entry(
     """
     coordinator: ABCEmergencyCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    manager = ABCEmergencyGeoLocationManager(hass, coordinator, async_add_entities)
+    # Generate instance-specific source for map filtering
+    instance_source = _get_instance_source(entry)
+
+    manager = ABCEmergencyGeoLocationManager(
+        hass, coordinator, async_add_entities, instance_source=instance_source
+    )
 
     # Initial population
     manager.async_update()

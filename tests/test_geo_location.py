@@ -11,15 +11,14 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abcemergency.const import (
-    CONF_STATE,
     CONF_USE_HOME_LOCATION,
     DOMAIN,
-    SOURCE,
     AlertLevel,
 )
 from custom_components.abcemergency.geo_location import (
     ABCEmergencyGeolocationEvent,
     ABCEmergencyGeoLocationManager,
+    _get_instance_source,
     async_setup_entry,
 )
 from custom_components.abcemergency.models import (
@@ -31,18 +30,70 @@ if TYPE_CHECKING:
     pass
 
 
+class TestGetInstanceSource:
+    """Test the _get_instance_source helper function."""
+
+    def test_returns_title_directly(self) -> None:
+        """Test source returns the entry title directly."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="ABC Emergency (Treehouse)",
+            data={},
+        )
+        assert _get_instance_source(entry) == "ABC Emergency (Treehouse)"
+
+    def test_title_with_state(self) -> None:
+        """Test source for state-style title."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="ABC Emergency (NSW)",
+            data={},
+        )
+        assert _get_instance_source(entry) == "ABC Emergency (NSW)"
+
+    def test_title_with_person_name(self) -> None:
+        """Test source for person-style title."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="ABC Emergency (Dad)",
+            data={},
+        )
+        assert _get_instance_source(entry) == "ABC Emergency (Dad)"
+
+    def test_empty_title_fallback(self) -> None:
+        """Test fallback when title is empty."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="",
+            data={},
+        )
+        assert _get_instance_source(entry) == "ABC Emergency"
+
+
 class TestABCEmergencyGeolocationEvent:
     """Test ABCEmergencyGeolocationEvent entity."""
 
-    def test_unique_id(
+    def test_unique_id_with_default_source(
         self,
         mock_coordinator: MagicMock,
         mock_incident_bushfire: EmergencyIncident,
     ) -> None:
-        """Test unique ID is correctly generated."""
+        """Test unique ID is correctly generated with default source."""
         event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_bushfire)
 
-        assert event.unique_id == f"{SOURCE}_{mock_incident_bushfire.id}"
+        assert event.unique_id == f"abc_emergency_{mock_incident_bushfire.id}"
+
+    def test_unique_id_with_instance_source(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test unique ID uses instance source."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_bushfire, instance_source="abc_emergency_home"
+        )
+
+        assert event.unique_id == f"abc_emergency_home_{mock_incident_bushfire.id}"
 
     def test_name(
         self,
@@ -54,15 +105,53 @@ class TestABCEmergencyGeolocationEvent:
 
         assert event.name == mock_incident_bushfire.headline
 
-    def test_source(
+    def test_source_with_instance_source(
         self,
         mock_coordinator: MagicMock,
         mock_incident_bushfire: EmergencyIncident,
     ) -> None:
-        """Test source property."""
-        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_bushfire)
+        """Test source property uses provided instance source."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_bushfire, instance_source="abc_emergency_home"
+        )
 
-        assert event.source == SOURCE
+        assert event.source == "abc_emergency_home"
+
+    def test_source_for_state_instance(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test source for state instance."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_bushfire, instance_source="abc_emergency_nsw"
+        )
+
+        assert event.source == "abc_emergency_nsw"
+
+    def test_source_for_zone_instance(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test source for zone instance."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_bushfire, instance_source="abc_emergency_my_home"
+        )
+
+        assert event.source == "abc_emergency_my_home"
+
+    def test_source_for_person_instance(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test source for person instance."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_bushfire, instance_source="abc_emergency_dad"
+        )
+
+        assert event.source == "abc_emergency_dad"
 
     def test_latitude(
         self,
@@ -129,7 +218,7 @@ class TestABCEmergencyGeolocationEvent:
         assert attrs["event_type"] == "Bushfire"
         assert attrs["event_icon"] == "fire"
         assert attrs["status"] == "Out of control"
-        assert attrs["source"] == "NSW Rural Fire Service"
+        assert attrs["agency"] == "NSW Rural Fire Service"
         assert attrs["direction"] == "S"
         assert attrs["size"] == "500 ha"
         assert "updated" in attrs
@@ -346,8 +435,8 @@ class TestAsyncSetupEntry:
         """Test that setup creates manager and calls initial update."""
         entry = MockConfigEntry(
             domain=DOMAIN,
+            title="ABC Emergency (NSW)",
             data={
-                CONF_STATE: "nsw",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
                 CONF_RADIUS: 50,
@@ -374,6 +463,102 @@ class TestAsyncSetupEntry:
         assert len(entities_added) == 3
         assert all(isinstance(e, ABCEmergencyGeolocationEvent) for e in entities_added)
 
+    async def test_setup_uses_friendly_title_as_source(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test that source uses the friendly entry title directly."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="ABC Emergency (VIC)",
+            data={},
+            unique_id="abc_emergency_state_vic",
+        )
+        entry.add_to_hass(hass)
+
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = mock_coordinator
+
+        entities_added: list[ABCEmergencyGeolocationEvent] = []
+
+        def mock_add_entities(entities: list) -> None:
+            entities_added.extend(entities)
+
+        entry.async_on_unload = MagicMock()
+
+        await async_setup_entry(hass, entry, mock_add_entities)
+
+        # All entities should have the friendly title as source
+        assert len(entities_added) == 3
+        for entity in entities_added:
+            assert entity.source == "ABC Emergency (VIC)"
+
+    async def test_setup_zone_uses_friendly_title_as_source(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test that zone instance uses friendly title as source."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="ABC Emergency (My Home)",
+            data={
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_my_home",
+        )
+        entry.add_to_hass(hass)
+
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = mock_coordinator
+
+        entities_added: list[ABCEmergencyGeolocationEvent] = []
+
+        def mock_add_entities(entities: list) -> None:
+            entities_added.extend(entities)
+
+        entry.async_on_unload = MagicMock()
+
+        await async_setup_entry(hass, entry, mock_add_entities)
+
+        # All entities should have the friendly title as source
+        assert len(entities_added) == 3
+        for entity in entities_added:
+            assert entity.source == "ABC Emergency (My Home)"
+
+    async def test_setup_person_uses_friendly_title_as_source(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test that person instance uses friendly title as source."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="ABC Emergency (Dad)",
+            data={},
+            unique_id="abc_emergency_person_dad",
+        )
+        entry.add_to_hass(hass)
+
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = mock_coordinator
+
+        entities_added: list[ABCEmergencyGeolocationEvent] = []
+
+        def mock_add_entities(entities: list) -> None:
+            entities_added.extend(entities)
+
+        entry.async_on_unload = MagicMock()
+
+        await async_setup_entry(hass, entry, mock_add_entities)
+
+        # All entities should have the friendly title as source
+        assert len(entities_added) == 3
+        for entity in entities_added:
+            assert entity.source == "ABC Emergency (Dad)"
+
     async def test_setup_registers_listener(
         self,
         hass: HomeAssistant,
@@ -382,8 +567,8 @@ class TestAsyncSetupEntry:
         """Test that setup registers update listener."""
         entry = MockConfigEntry(
             domain=DOMAIN,
+            title="ABC Emergency (NSW)",
             data={
-                CONF_STATE: "nsw",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
                 CONF_RADIUS: 50,

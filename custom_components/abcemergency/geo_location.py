@@ -7,6 +7,7 @@ as markers on the Home Assistant map.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.geo_location import GeolocationEvent
@@ -15,7 +16,17 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SOURCE
+from .const import (
+    CONF_INSTANCE_TYPE,
+    CONF_PERSON_NAME,
+    CONF_STATE,
+    CONF_ZONE_NAME,
+    DOMAIN,
+    INSTANCE_TYPE_PERSON,
+    INSTANCE_TYPE_STATE,
+    INSTANCE_TYPE_ZONE,
+    SOURCE,
+)
 from .coordinator import ABCEmergencyCoordinator
 from .models import EmergencyIncident
 
@@ -23,6 +34,49 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _slugify_name(name: str) -> str:
+    """Convert a name to a slug suitable for source identifiers.
+
+    Args:
+        name: The name to slugify.
+
+    Returns:
+        Lowercase name with spaces replaced by underscores, special chars removed.
+    """
+    # Convert to lowercase
+    slug = name.lower()
+    # Replace spaces with underscores
+    slug = slug.replace(" ", "_")
+    # Remove any character that isn't alphanumeric or underscore
+    slug = re.sub(r"[^a-z0-9_]", "", slug)
+    return slug
+
+
+def _get_instance_source(entry: ConfigEntry) -> str:
+    """Generate an instance-based source identifier for geo-location filtering.
+
+    Args:
+        entry: The config entry for this integration instance.
+
+    Returns:
+        A source string like 'abc_emergency_nsw', 'abc_emergency_home',
+        or 'abc_emergency_dad' based on instance type.
+    """
+    instance_type = entry.data.get(CONF_INSTANCE_TYPE, INSTANCE_TYPE_STATE)
+
+    if instance_type == INSTANCE_TYPE_STATE:
+        state = entry.data.get(CONF_STATE, "unknown")
+        return f"{SOURCE}_{state}"
+    elif instance_type == INSTANCE_TYPE_ZONE:
+        zone_name = entry.data.get(CONF_ZONE_NAME, "zone")
+        return f"{SOURCE}_{_slugify_name(zone_name)}"
+    elif instance_type == INSTANCE_TYPE_PERSON:
+        person_name = entry.data.get(CONF_PERSON_NAME, "person")
+        return f"{SOURCE}_{_slugify_name(person_name)}"
+    else:
+        return SOURCE
 
 
 class ABCEmergencyGeolocationEvent(
@@ -38,22 +92,25 @@ class ABCEmergencyGeolocationEvent(
         self,
         coordinator: ABCEmergencyCoordinator,
         incident: EmergencyIncident,
+        instance_source: str = SOURCE,
     ) -> None:
         """Initialize the geo location event.
 
         Args:
             coordinator: The data update coordinator.
             incident: The emergency incident data.
+            instance_source: The source identifier for this instance (e.g., abc_emergency_nsw).
         """
         super().__init__(coordinator)
         self._incident = incident
-        self._attr_unique_id = f"{SOURCE}_{incident.id}"
+        self._instance_source = instance_source
+        self._attr_unique_id = f"{instance_source}_{incident.id}"
         self._attr_name = incident.headline
 
     @property
     def source(self) -> str:
-        """Return source of the event."""
-        return SOURCE
+        """Return source of the event for map filtering."""
+        return self._instance_source
 
     @property
     def latitude(self) -> float | None:
@@ -112,6 +169,7 @@ class ABCEmergencyGeoLocationManager:
         hass: HomeAssistant,
         coordinator: ABCEmergencyCoordinator,
         async_add_entities: AddEntitiesCallback,
+        instance_source: str = SOURCE,
     ) -> None:
         """Initialize the manager.
 
@@ -119,10 +177,12 @@ class ABCEmergencyGeoLocationManager:
             hass: Home Assistant instance.
             coordinator: The data update coordinator.
             async_add_entities: Callback to add entities.
+            instance_source: The source identifier for this instance.
         """
         self._hass = hass
         self._coordinator = coordinator
         self._async_add_entities = async_add_entities
+        self._instance_source = instance_source
         self._entities: dict[str, ABCEmergencyGeolocationEvent] = {}
 
     @callback
@@ -139,7 +199,9 @@ class ABCEmergencyGeoLocationManager:
         if new_ids:
             new_incidents = [i for i in self._coordinator.data.incidents if i.id in new_ids]
             new_entities = [
-                ABCEmergencyGeolocationEvent(self._coordinator, incident)
+                ABCEmergencyGeolocationEvent(
+                    self._coordinator, incident, instance_source=self._instance_source
+                )
                 for incident in new_incidents
             ]
             self._async_add_entities(new_entities)
@@ -168,7 +230,12 @@ async def async_setup_entry(
     """
     coordinator: ABCEmergencyCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    manager = ABCEmergencyGeoLocationManager(hass, coordinator, async_add_entities)
+    # Generate instance-specific source for map filtering
+    instance_source = _get_instance_source(entry)
+
+    manager = ABCEmergencyGeoLocationManager(
+        hass, coordinator, async_add_entities, instance_source=instance_source
+    )
 
     # Initial population
     manager.async_update()

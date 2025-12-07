@@ -7,7 +7,6 @@ as markers on the Home Assistant map.
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.geo_location import GeolocationEvent
@@ -16,17 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    CONF_INSTANCE_TYPE,
-    CONF_PERSON_NAME,
-    CONF_STATE,
-    CONF_ZONE_NAME,
-    DOMAIN,
-    INSTANCE_TYPE_PERSON,
-    INSTANCE_TYPE_STATE,
-    INSTANCE_TYPE_ZONE,
-    SOURCE,
-)
+from .const import DOMAIN
 from .coordinator import ABCEmergencyCoordinator
 from .models import EmergencyIncident
 
@@ -36,47 +25,19 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-def _slugify_name(name: str) -> str:
-    """Convert a name to a slug suitable for source identifiers.
-
-    Args:
-        name: The name to slugify.
-
-    Returns:
-        Lowercase name with spaces replaced by underscores, special chars removed.
-    """
-    # Convert to lowercase
-    slug = name.lower()
-    # Replace spaces with underscores
-    slug = slug.replace(" ", "_")
-    # Remove any character that isn't alphanumeric or underscore
-    slug = re.sub(r"[^a-z0-9_]", "", slug)
-    return slug
-
-
 def _get_instance_source(entry: ConfigEntry) -> str:
     """Generate an instance-based source identifier for geo-location filtering.
+
+    Uses the config entry title directly (e.g., "ABC Emergency (Treehouse)")
+    as the source for map card filtering.
 
     Args:
         entry: The config entry for this integration instance.
 
     Returns:
-        A source string like 'abc_emergency_nsw', 'abc_emergency_home',
-        or 'abc_emergency_dad' based on instance type.
+        The entry title as the source string, or a default if no title.
     """
-    instance_type = entry.data.get(CONF_INSTANCE_TYPE, INSTANCE_TYPE_STATE)
-
-    if instance_type == INSTANCE_TYPE_STATE:
-        state = entry.data.get(CONF_STATE, "unknown")
-        return f"{SOURCE}_{state}"
-    elif instance_type == INSTANCE_TYPE_ZONE:
-        zone_name = entry.data.get(CONF_ZONE_NAME, "zone")
-        return f"{SOURCE}_{_slugify_name(zone_name)}"
-    elif instance_type == INSTANCE_TYPE_PERSON:
-        person_name = entry.data.get(CONF_PERSON_NAME, "person")
-        return f"{SOURCE}_{_slugify_name(person_name)}"
-    else:
-        return SOURCE
+    return entry.title or "ABC Emergency"
 
 
 class ABCEmergencyGeolocationEvent(
@@ -92,14 +53,14 @@ class ABCEmergencyGeolocationEvent(
         self,
         coordinator: ABCEmergencyCoordinator,
         incident: EmergencyIncident,
-        instance_source: str = SOURCE,
+        instance_source: str = "abc_emergency",
     ) -> None:
         """Initialize the geo location event.
 
         Args:
             coordinator: The data update coordinator.
             incident: The emergency incident data.
-            instance_source: The source identifier for this instance (e.g., abc_emergency_nsw).
+            instance_source: The source identifier for this instance (e.g., abc_emergency_treehouse).
         """
         super().__init__(coordinator)
         self._incident = incident
@@ -136,7 +97,7 @@ class ABCEmergencyGeolocationEvent(
             "event_type": self._incident.event_type,
             "event_icon": self._incident.event_icon,
             "status": self._incident.status,
-            "source": self._incident.source,
+            "agency": self._incident.source,  # Renamed from 'source' to avoid conflict with geo_location source property
             "direction": self._incident.direction,
             "updated": self._incident.updated.isoformat(),
         }
@@ -169,7 +130,7 @@ class ABCEmergencyGeoLocationManager:
         hass: HomeAssistant,
         coordinator: ABCEmergencyCoordinator,
         async_add_entities: AddEntitiesCallback,
-        instance_source: str = SOURCE,
+        instance_source: str = "abc_emergency",
     ) -> None:
         """Initialize the manager.
 
@@ -177,7 +138,7 @@ class ABCEmergencyGeoLocationManager:
             hass: Home Assistant instance.
             coordinator: The data update coordinator.
             async_add_entities: Callback to add entities.
-            instance_source: The source identifier for this instance.
+            instance_source: The source identifier for this instance (e.g., abc_emergency_treehouse).
         """
         self._hass = hass
         self._coordinator = coordinator

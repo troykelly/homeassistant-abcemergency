@@ -11,22 +11,14 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abcemergency.const import (
-    CONF_INSTANCE_TYPE,
-    CONF_PERSON_NAME,
-    CONF_STATE,
     CONF_USE_HOME_LOCATION,
-    CONF_ZONE_NAME,
     DOMAIN,
-    INSTANCE_TYPE_PERSON,
-    INSTANCE_TYPE_STATE,
-    INSTANCE_TYPE_ZONE,
     AlertLevel,
 )
 from custom_components.abcemergency.geo_location import (
     ABCEmergencyGeolocationEvent,
     ABCEmergencyGeoLocationManager,
     _get_instance_source,
-    _slugify_name,
     async_setup_entry,
 )
 from custom_components.abcemergency.models import (
@@ -38,76 +30,44 @@ if TYPE_CHECKING:
     pass
 
 
-class TestSlugifyName:
-    """Test the _slugify_name helper function."""
-
-    def test_lowercase_conversion(self) -> None:
-        """Test that names are converted to lowercase."""
-        assert _slugify_name("Home") == "home"
-        assert _slugify_name("NSW") == "nsw"
-
-    def test_space_to_underscore(self) -> None:
-        """Test that spaces are converted to underscores."""
-        assert _slugify_name("My Home") == "my_home"
-        assert _slugify_name("Home Office") == "home_office"
-
-    def test_special_chars_removed(self) -> None:
-        """Test that special characters are removed."""
-        assert _slugify_name("Dad's Place") == "dads_place"
-        assert _slugify_name("Home (Main)") == "home_main"
-
-    def test_multiple_transformations(self) -> None:
-        """Test combined transformations."""
-        assert _slugify_name("Mum & Dad's") == "mum__dads"
-
-
 class TestGetInstanceSource:
     """Test the _get_instance_source helper function."""
 
-    def test_state_instance_source(self) -> None:
-        """Test source generation for state instance."""
+    def test_returns_title_directly(self) -> None:
+        """Test source returns the entry title directly."""
         entry = MockConfigEntry(
             domain=DOMAIN,
-            data={
-                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
-                CONF_STATE: "nsw",
-            },
+            title="ABC Emergency (Treehouse)",
+            data={},
         )
-        assert _get_instance_source(entry) == "abc_emergency_nsw"
+        assert _get_instance_source(entry) == "ABC Emergency (Treehouse)"
 
-    def test_zone_instance_source(self) -> None:
-        """Test source generation for zone instance."""
+    def test_title_with_state(self) -> None:
+        """Test source for state-style title."""
         entry = MockConfigEntry(
             domain=DOMAIN,
-            data={
-                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
-                CONF_ZONE_NAME: "My Home",
-            },
+            title="ABC Emergency (NSW)",
+            data={},
         )
-        assert _get_instance_source(entry) == "abc_emergency_my_home"
+        assert _get_instance_source(entry) == "ABC Emergency (NSW)"
 
-    def test_person_instance_source(self) -> None:
-        """Test source generation for person instance."""
+    def test_title_with_person_name(self) -> None:
+        """Test source for person-style title."""
         entry = MockConfigEntry(
             domain=DOMAIN,
-            data={
-                CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON,
-                CONF_PERSON_NAME: "Dad",
-            },
+            title="ABC Emergency (Dad)",
+            data={},
         )
-        assert _get_instance_source(entry) == "abc_emergency_dad"
+        assert _get_instance_source(entry) == "ABC Emergency (Dad)"
 
-    def test_fallback_to_default_source(self) -> None:
-        """Test fallback when instance type is unknown."""
-        from custom_components.abcemergency.const import SOURCE
-
+    def test_empty_title_fallback(self) -> None:
+        """Test fallback when title is empty."""
         entry = MockConfigEntry(
             domain=DOMAIN,
-            data={
-                CONF_INSTANCE_TYPE: "unknown",
-            },
+            title="",
+            data={},
         )
-        assert _get_instance_source(entry) == SOURCE
+        assert _get_instance_source(entry) == "ABC Emergency"
 
 
 class TestABCEmergencyGeolocationEvent:
@@ -119,11 +79,9 @@ class TestABCEmergencyGeolocationEvent:
         mock_incident_bushfire: EmergencyIncident,
     ) -> None:
         """Test unique ID is correctly generated with default source."""
-        from custom_components.abcemergency.const import SOURCE
-
         event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_bushfire)
 
-        assert event.unique_id == f"{SOURCE}_{mock_incident_bushfire.id}"
+        assert event.unique_id == f"abc_emergency_{mock_incident_bushfire.id}"
 
     def test_unique_id_with_instance_source(
         self,
@@ -260,7 +218,7 @@ class TestABCEmergencyGeolocationEvent:
         assert attrs["event_type"] == "Bushfire"
         assert attrs["event_icon"] == "fire"
         assert attrs["status"] == "Out of control"
-        assert attrs["source"] == "NSW Rural Fire Service"
+        assert attrs["agency"] == "NSW Rural Fire Service"
         assert attrs["direction"] == "S"
         assert attrs["size"] == "500 ha"
         assert "updated" in attrs
@@ -477,9 +435,8 @@ class TestAsyncSetupEntry:
         """Test that setup creates manager and calls initial update."""
         entry = MockConfigEntry(
             domain=DOMAIN,
+            title="ABC Emergency (NSW)",
             data={
-                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
-                CONF_STATE: "nsw",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
                 CONF_RADIUS: 50,
@@ -506,18 +463,16 @@ class TestAsyncSetupEntry:
         assert len(entities_added) == 3
         assert all(isinstance(e, ABCEmergencyGeolocationEvent) for e in entities_added)
 
-    async def test_setup_state_instance_uses_state_source(
+    async def test_setup_uses_friendly_title_as_source(
         self,
         hass: HomeAssistant,
         mock_coordinator: MagicMock,
     ) -> None:
-        """Test that state instance uses state code in source."""
+        """Test that source uses the friendly entry title directly."""
         entry = MockConfigEntry(
             domain=DOMAIN,
-            data={
-                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
-                CONF_STATE: "vic",
-            },
+            title="ABC Emergency (VIC)",
+            data={},
             unique_id="abc_emergency_state_vic",
         )
         entry.add_to_hass(hass)
@@ -534,22 +489,21 @@ class TestAsyncSetupEntry:
 
         await async_setup_entry(hass, entry, mock_add_entities)
 
-        # All entities should have the state-based source
+        # All entities should have the friendly title as source
         assert len(entities_added) == 3
         for entity in entities_added:
-            assert entity.source == "abc_emergency_vic"
+            assert entity.source == "ABC Emergency (VIC)"
 
-    async def test_setup_zone_instance_uses_zone_name_source(
+    async def test_setup_zone_uses_friendly_title_as_source(
         self,
         hass: HomeAssistant,
         mock_coordinator: MagicMock,
     ) -> None:
-        """Test that zone instance uses zone name in source."""
+        """Test that zone instance uses friendly title as source."""
         entry = MockConfigEntry(
             domain=DOMAIN,
+            title="ABC Emergency (My Home)",
             data={
-                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
-                CONF_ZONE_NAME: "My Home",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
             },
@@ -569,23 +523,21 @@ class TestAsyncSetupEntry:
 
         await async_setup_entry(hass, entry, mock_add_entities)
 
-        # All entities should have the zone-based source (slugified)
+        # All entities should have the friendly title as source
         assert len(entities_added) == 3
         for entity in entities_added:
-            assert entity.source == "abc_emergency_my_home"
+            assert entity.source == "ABC Emergency (My Home)"
 
-    async def test_setup_person_instance_uses_person_name_source(
+    async def test_setup_person_uses_friendly_title_as_source(
         self,
         hass: HomeAssistant,
         mock_coordinator: MagicMock,
     ) -> None:
-        """Test that person instance uses person name in source."""
+        """Test that person instance uses friendly title as source."""
         entry = MockConfigEntry(
             domain=DOMAIN,
-            data={
-                CONF_INSTANCE_TYPE: INSTANCE_TYPE_PERSON,
-                CONF_PERSON_NAME: "Dad",
-            },
+            title="ABC Emergency (Dad)",
+            data={},
             unique_id="abc_emergency_person_dad",
         )
         entry.add_to_hass(hass)
@@ -602,10 +554,10 @@ class TestAsyncSetupEntry:
 
         await async_setup_entry(hass, entry, mock_add_entities)
 
-        # All entities should have the person-based source
+        # All entities should have the friendly title as source
         assert len(entities_added) == 3
         for entity in entities_added:
-            assert entity.source == "abc_emergency_dad"
+            assert entity.source == "ABC Emergency (Dad)"
 
     async def test_setup_registers_listener(
         self,
@@ -615,8 +567,8 @@ class TestAsyncSetupEntry:
         """Test that setup registers update listener."""
         entry = MockConfigEntry(
             domain=DOMAIN,
+            title="ABC Emergency (NSW)",
             data={
-                CONF_STATE: "nsw",
                 CONF_LATITUDE: -33.8688,
                 CONF_LONGITUDE: 151.2093,
                 CONF_RADIUS: 50,

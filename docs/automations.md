@@ -598,6 +598,207 @@ automation:
 
 ---
 
+## Event-Based Automations
+
+The integration fires Home Assistant events when **new incidents** are detected. This enables real-time alerting for each individual incident as it appears, rather than relying on sensor state changes.
+
+### Why Use Events?
+
+- **Per-incident notifications** - Get alerted for each new incident, not just when counts change
+- **Rich incident data** - Event payload contains all incident details for use in templates
+- **Type-specific triggers** - Trigger only on bushfires, floods, storms, etc.
+- **Instance awareness** - Event data identifies which integration instance detected the incident
+
+### Basic New Incident Alert
+
+```yaml
+automation:
+  - id: abc_emergency_new_incident
+    alias: "ABC Emergency - New Incident Detected"
+    description: "Alert when any new emergency incident is detected"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_incident
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "{{ trigger.event.data.event_type }}: {{ trigger.event.data.alert_text }}"
+          message: >
+            {{ trigger.event.data.headline }}
+            {% if trigger.event.data.distance_km %}
+            Distance: {{ trigger.event.data.distance_km | round(1) }}km {{ trigger.event.data.direction }}
+            {% endif %}
+          data:
+            priority: >
+              {% if trigger.event.data.alert_level == 'Emergency Warning' %}critical
+              {% elif trigger.event.data.alert_level == 'Watch and Act' %}high
+              {% else %}normal{% endif %}
+```
+
+### Type-Specific Incident Alerts
+
+Trigger automations only for specific incident types:
+
+```yaml
+automation:
+  # Bushfire-specific alert
+  - id: abc_emergency_new_bushfire
+    alias: "ABC Emergency - New Bushfire"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_bushfire
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "🔥 New Bushfire Detected"
+          message: >
+            {{ trigger.event.data.headline }}
+            {% if trigger.event.data.distance_km %}
+            {{ trigger.event.data.distance_km | round(1) }}km {{ trigger.event.data.direction }}
+            {% endif %}
+          data:
+            priority: high
+
+  # Flood-specific alert
+  - id: abc_emergency_new_flood
+    alias: "ABC Emergency - New Flood"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_flood
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "🌊 New Flood Warning"
+          message: "{{ trigger.event.data.headline }}"
+
+  # Storm-specific alert
+  - id: abc_emergency_new_storm
+    alias: "ABC Emergency - New Storm"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_storm
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "⛈️ New Storm Warning"
+          message: "{{ trigger.event.data.headline }}"
+```
+
+### Filter by Instance
+
+If you have multiple integration instances (e.g., home, office, beach house), filter events by instance:
+
+```yaml
+automation:
+  - id: abc_emergency_new_incident_home_only
+    alias: "ABC Emergency - New Incident (Home Only)"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_incident
+    condition:
+      - condition: template
+        value_template: "{{ trigger.event.data.instance_name == 'ABC Emergency (Home)' }}"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Emergency Near Home"
+          message: "{{ trigger.event.data.headline }}"
+```
+
+### Filter by Distance
+
+Only alert for incidents within a certain distance:
+
+```yaml
+automation:
+  - id: abc_emergency_new_incident_close
+    alias: "ABC Emergency - New Incident Within 25km"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_incident
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.event.data.distance_km is not none and
+             trigger.event.data.distance_km < 25 }}
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "NEARBY: {{ trigger.event.data.event_type }}"
+          message: >
+            {{ trigger.event.data.headline }}
+            Only {{ trigger.event.data.distance_km | round(1) }}km away!
+          data:
+            priority: high
+```
+
+### Filter by Alert Level
+
+Only trigger for serious warnings:
+
+```yaml
+automation:
+  - id: abc_emergency_serious_incident
+    alias: "ABC Emergency - Serious New Incident"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_incident
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.event.data.alert_level in ['Emergency Warning', 'Watch and Act'] }}
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "{{ trigger.event.data.alert_level | upper }}"
+          message: "{{ trigger.event.data.headline }}"
+          data:
+            priority: critical
+```
+
+### Event Reference
+
+#### Available Events
+
+| Event Type | Description |
+|------------|-------------|
+| `abc_emergency_new_incident` | Fired for any new incident |
+| `abc_emergency_new_bushfire` | Fired for new bushfire incidents |
+| `abc_emergency_new_flood` | Fired for new flood incidents |
+| `abc_emergency_new_storm` | Fired for new storm incidents |
+| `abc_emergency_new_extreme_heat` | Fired for new extreme heat incidents |
+| `abc_emergency_new_cyclone` | Fired for new cyclone incidents |
+| `abc_emergency_new_earthquake` | Fired for new earthquake incidents |
+
+> **Note:** Type-specific events use a slugified version of the incident type (lowercase, spaces replaced with underscores).
+
+#### Event Data Fields
+
+All events include the following data fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config_entry_id` | string | Config entry ID of the integration instance |
+| `instance_name` | string | Name of the integration instance (e.g., "ABC Emergency (Home)") |
+| `instance_type` | string | Type: `"state"`, `"zone"`, or `"person"` |
+| `incident_id` | string | Unique incident identifier |
+| `headline` | string | Incident headline/title |
+| `event_type` | string | Type: `"Bushfire"`, `"Flood"`, `"Storm"`, etc. |
+| `event_icon` | string | Icon identifier for the incident type |
+| `alert_level` | string | `"Emergency Warning"`, `"Watch and Act"`, `"Advice"`, or `"Information"` |
+| `alert_text` | string | Alert level display text |
+| `latitude` | float | Incident latitude |
+| `longitude` | float | Incident longitude |
+| `distance_km` | float \| null | Distance from monitored location (zone/person mode only) |
+| `direction` | string \| null | Compass direction (zone/person mode only) |
+| `bearing` | float \| null | Bearing in degrees (zone/person mode only) |
+| `status` | string \| null | Incident status (e.g., "Out of control") |
+| `size` | string \| null | Incident size (e.g., "500 ha") |
+| `source` | string \| null | Data source agency (e.g., "NSW Rural Fire Service") |
+| `updated` | string | ISO 8601 timestamp of last update |
+
+---
+
 ## Next Steps
 
 - [Notifications Guide](notifications.md) - Detailed notification setup

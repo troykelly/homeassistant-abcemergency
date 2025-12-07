@@ -72,6 +72,7 @@ This integration uses the official [Australian Warning System](https://www.austr
 
 ### Smart Alerting
 
+- **Per-incident events** - Get notified for each new incident as it appears
 - **Per-incident-type radius** - Bushfires alert at 50km, structure fires at 10km
 - **Nearest incident tracking** - Know exactly how far away the closest threat is
 - **Binary sensors** - Simple on/off triggers for each warning level
@@ -130,6 +131,7 @@ automation:
 | [Configuration](docs/configuration.md) | All configuration options explained |
 | [Entities Reference](docs/entities.md) | Complete list of sensors and their attributes |
 | [Automations](docs/automations.md) | Ready-to-use automation examples |
+| [Events](docs/automations.md#event-based-automations) | Event-based per-incident alerting |
 | [Notifications](docs/notifications.md) | Mobile alerts, critical notifications, TTS |
 | [Scripts](docs/scripts.md) | Emergency briefings, evacuation checklists |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
@@ -214,7 +216,28 @@ automation:
             Type: {{ state_attr('sensor.abc_emergency_dad_nearest_incident', 'event_type') }}
 ```
 
-See [Automations Guide](docs/automations.md) for more examples including TTS announcements, smart light alerts, and quiet hours handling.
+### New Incident Event Alert
+
+Get notified for each new incident as it appears:
+
+```yaml
+automation:
+  - alias: "New Emergency Incident"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_new_incident
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "{{ trigger.event.data.event_type }}: {{ trigger.event.data.alert_text }}"
+          message: >
+            {{ trigger.event.data.headline }}
+            {% if trigger.event.data.distance_km %}
+            ({{ trigger.event.data.distance_km | round(1) }}km {{ trigger.event.data.direction }})
+            {% endif %}
+```
+
+See [Automations Guide](docs/automations.md) for more examples including TTS announcements, smart light alerts, event-based alerting, and quiet hours handling.
 
 ---
 

@@ -370,12 +370,24 @@ When enabled, the integration creates geo-location entities for mapping incident
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
-| `source` | string | Always `abc_emergency` |
-| `headline` | string | Incident description |
+| `source` | string | Instance title for map filtering (e.g., `ABC Emergency (Home)`) |
+| `agency` | string | Reporting emergency service (e.g., `NSW Rural Fire Service`) |
 | `alert_level` | string | Warning level |
+| `alert_text` | string | Warning level text (e.g., `Advice`, `Watch and Act`, `Emergency`) |
 | `event_type` | string | Type of incident |
+| `event_icon` | string | Icon identifier for the event type |
 | `status` | string | Current incident status |
-| `size` | string | Affected area size (for fires) |
+| `direction` | string | Compass direction from monitored location |
+| `updated` | string | ISO 8601 timestamp of last update |
+| `size` | string | Affected area size (for fires, when available) |
+
+**Note:** The `source` attribute matches your configuration title exactly. Use this in map card `geo_location_sources` to filter incidents by instance. For example:
+
+```yaml
+type: map
+geo_location_sources:
+  - "ABC Emergency (Home)"  # Must be quoted due to spaces/parentheses
+```
 
 ---
 

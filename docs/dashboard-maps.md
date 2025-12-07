@@ -10,32 +10,34 @@ Add ABC Emergency incidents to a map card in just a few steps:
 
 ### 1. Find Your Source Name
 
-Each ABC Emergency instance has a unique source name based on how you configured it:
+Each ABC Emergency instance uses its **configuration title** as the source name:
 
-| Instance Type | Example Name | Source Name |
-|---------------|--------------|-------------|
-| State (NSW) | "NSW" | `abc_emergency_nsw` |
-| State (VIC) | "VIC" | `abc_emergency_vic` |
-| Zone | "Home" | `abc_emergency_home` |
-| Zone | "My Home" | `abc_emergency_my_home` |
-| Person | "Dad" | `abc_emergency_dad` |
+| Instance Type | Configuration Title | Source for Map Card |
+|---------------|---------------------|---------------------|
+| State (NSW) | ABC Emergency (NSW) | `"ABC Emergency (NSW)"` |
+| State (VIC) | ABC Emergency (VIC) | `"ABC Emergency (VIC)"` |
+| Zone | ABC Emergency (Home) | `"ABC Emergency (Home)"` |
+| Zone | ABC Emergency (Treehouse) | `"ABC Emergency (Treehouse)"` |
+| Person | ABC Emergency (Dad) | `"ABC Emergency (Dad)"` |
 
-The source name is: `abc_emergency_` + your instance name (lowercase, spaces become underscores).
+The source name is exactly what you see in **Settings → Devices & Services → ABC Emergency**.
 
 ### 2. Basic Map Card
 
-Add this to your dashboard (via UI or YAML), replacing the source with your instance:
+Add this to your dashboard (via UI or YAML), replacing the source with your instance title:
 
 ```yaml
 type: map
 title: Nearby Emergencies
 geo_location_sources:
-  - abc_emergency_home
+  - "ABC Emergency (Home)"
 entities:
   - zone.home
 default_zoom: 10
 aspect_ratio: "16:9"
 ```
+
+> **Note:** The source must be quoted because it contains spaces and parentheses.
 
 ### 3. View the Result
 
@@ -49,7 +51,7 @@ The map will show markers for each active emergency incident from that instance.
 
 | Option | Description | Example |
 |--------|-------------|---------|
-| `geo_location_sources` | Source filter for geo-location entities | `abc_emergency_home` |
+| `geo_location_sources` | Source filter for geo-location entities | `"ABC Emergency (Home)"` |
 | `default_zoom` | Initial zoom level (1-20) | `10` |
 | `aspect_ratio` | Card aspect ratio | `"16:9"` |
 | `dark_mode` | Force dark map tiles | `true` |
@@ -76,7 +78,7 @@ Show incidents near your home:
 type: map
 title: Emergencies Near Home
 geo_location_sources:
-  - abc_emergency_home
+  - "ABC Emergency (Home)"
 entities:
   - zone.home
 default_zoom: 12
@@ -91,7 +93,7 @@ Monitor all incidents across an entire state:
 type: map
 title: NSW Emergencies
 geo_location_sources:
-  - abc_emergency_nsw
+  - "ABC Emergency (NSW)"
 default_zoom: 6
 aspect_ratio: "16:9"
 ```
@@ -104,7 +106,7 @@ Follow a family member's location with nearby incidents:
 type: map
 title: Dad's Location
 geo_location_sources:
-  - abc_emergency_dad
+  - "ABC Emergency (Dad)"
 entities:
   - person.dad
 default_zoom: 11
@@ -119,9 +121,9 @@ Combine incidents from multiple ABC Emergency instances:
 type: map
 title: Family Emergency Watch
 geo_location_sources:
-  - abc_emergency_home
-  - abc_emergency_work
-  - abc_emergency_dad
+  - "ABC Emergency (Home)"
+  - "ABC Emergency (Work)"
+  - "ABC Emergency (Dad)"
 entities:
   - zone.home
   - zone.work
@@ -139,7 +141,7 @@ type: vertical-stack
 cards:
   - type: map
     geo_location_sources:
-      - abc_emergency_home
+      - "ABC Emergency (Home)"
     entities:
       - zone.home
     default_zoom: 10
@@ -163,32 +165,34 @@ cards:
 
 ### How Sources Work
 
-Each ABC Emergency instance creates geo-location entities with a unique source:
+Each ABC Emergency instance creates geo-location entities with a source matching the configuration title:
 
-| Your Instance | Source for Map |
-|---------------|----------------|
-| Zone named "Home" | `abc_emergency_home` |
-| Zone named "Beach House" | `abc_emergency_beach_house` |
-| State "nsw" | `abc_emergency_nsw` |
-| State "vic" | `abc_emergency_vic` |
-| Person named "Mum" | `abc_emergency_mum` |
+| Your Instance Title | Source for Map |
+|---------------------|----------------|
+| ABC Emergency (Home) | `"ABC Emergency (Home)"` |
+| ABC Emergency (Beach House) | `"ABC Emergency (Beach House)"` |
+| ABC Emergency (NSW) | `"ABC Emergency (NSW)"` |
+| ABC Emergency (VIC) | `"ABC Emergency (VIC)"` |
+| ABC Emergency (Mum) | `"ABC Emergency (Mum)"` |
 
-The source is automatically generated from your instance configuration.
-
-### Source Naming Rules
-
-- **Lowercase**: "Home" becomes `home`
-- **Spaces to underscores**: "My Home" becomes `my_home`
-- **Special characters removed**: "Dad's Place" becomes `dads_place`
+The source is the **exact title** shown in your integration configuration.
 
 ### Geo-Location Entity Attributes
 
 Each geo-location entity includes:
 
-- **State**: Distance from monitored location (in km)
-- **Latitude/Longitude**: Incident coordinates
-- **Source**: Instance-specific (e.g., `abc_emergency_home`)
-- **Attributes**: Alert level, event type, status, headline, reporting agency
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| **state** | Distance from monitored location | `12.5` (km) |
+| **latitude** | Incident latitude | `-33.8688` |
+| **longitude** | Incident longitude | `151.2093` |
+| **source** | Instance title for map filtering | `ABC Emergency (Home)` |
+| **agency** | Reporting emergency service | `NSW Rural Fire Service` |
+| **alert_level** | Warning level | `moderate` |
+| **alert_text** | Warning text | `Advice` |
+| **event_type** | Incident type | `Bushfire` |
+| **status** | Current status | `Being controlled` |
+| **direction** | Direction from you | `NW` |
 
 ---
 
@@ -199,7 +203,7 @@ Each geo-location entity includes:
 ```yaml
 type: map
 geo_location_sources:
-  - abc_emergency_home  # Only home zone incidents
+  - "ABC Emergency (Home)"  # Only home zone incidents
 ```
 
 ### Show Multiple Instances
@@ -207,8 +211,8 @@ geo_location_sources:
 ```yaml
 type: map
 geo_location_sources:
-  - abc_emergency_home
-  - abc_emergency_nsw
+  - "ABC Emergency (Home)"
+  - "ABC Emergency (NSW)"
 ```
 
 ### Separate Maps per Instance
@@ -220,7 +224,7 @@ Create different map cards for different purposes:
 type: map
 title: Nearby Emergencies
 geo_location_sources:
-  - abc_emergency_home
+  - "ABC Emergency (Home)"
 entities:
   - zone.home
 default_zoom: 12
@@ -231,7 +235,7 @@ default_zoom: 12
 type: map
 title: All NSW Incidents
 geo_location_sources:
-  - abc_emergency_nsw
+  - "ABC Emergency (NSW)"
 default_zoom: 6
 ```
 
@@ -250,7 +254,7 @@ card:
   type: map
   title: Active Emergencies!
   geo_location_sources:
-    - abc_emergency_home
+    - "ABC Emergency (Home)"
   entities:
     - zone.home
   default_zoom: 10
@@ -267,7 +271,7 @@ card:
   type: map
   title: "⚠️ EMERGENCY WARNING"
   geo_location_sources:
-    - abc_emergency_home
+    - "ABC Emergency (Home)"
   entities:
     - zone.home
   default_zoom: 11
@@ -296,7 +300,7 @@ automation:
           card:
             type: map
             geo_location_sources:
-              - abc_emergency_home
+              - "ABC Emergency (Home)"
             entities:
               - zone.home
             default_zoom: 10
@@ -341,14 +345,14 @@ The integration updates every 5 minutes by default. Map markers update automatic
 
 1. **Check if incidents exist**: Look at `sensor.abc_emergency_*_incidents_total`
 2. **Verify source name**: Check Developer Tools → States for your geo_location entities
-3. **Source spelling**: Must match exactly (lowercase, underscores for spaces)
+3. **Source must be quoted**: Use `"ABC Emergency (Home)"` not `ABC Emergency (Home)`
 
 ### Find Your Exact Source Name
 
 1. Go to **Developer Tools** → **States**
-2. Filter for `geo_location.abc_emergency`
-3. Click on any entity
-4. Look at the `source` attribute
+2. Filter for `geo_location`
+3. Click on any ABC Emergency geo_location entity
+4. Look at the `source` attribute - this is what you use in your map card
 
 ### Map Centered Wrong
 
@@ -357,7 +361,7 @@ By default, the map centers on entities in the `entities` list. To auto-fit to i
 ```yaml
 type: map
 geo_location_sources:
-  - abc_emergency_home
+  - "ABC Emergency (Home)"
 # Omit 'entities' to auto-fit to geo_locations
 ```
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/troykelly/homeassistant-abcemergency/main/custom_components/abcemergency/images/icon%402x.png" alt="ABC Emergency Logo" width="128" height="128">
+  <img src="https://github.com/troykelly/homeassistant-abcemergency/blob/70d4d2ecacfc94bf93ea839b5303861445a27e36/images/logo.png" alt="ABC Emergency Logo">
 </p>
 
 <h1 align="center">ABC Emergency for Home Assistant</h1>

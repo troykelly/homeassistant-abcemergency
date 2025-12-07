@@ -1,0 +1,132 @@
+blueprint:
+  name: ABC Emergency - Light Alert
+  description: >
+    Flash or color lights based on emergency alert level.
+    Red for Emergency Warning, Orange for Watch and Act, Yellow for Advice.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_light_alert.yaml
+  input:
+    highest_alert_sensor:
+      name: Highest Alert Level Sensor
+      description: The highest alert level sensor (e.g., sensor.abc_emergency_home_highest_alert_level)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: sensor
+    emergency_warning_sensor:
+      name: Emergency Warning Sensor
+      description: The emergency warning binary sensor for flash trigger (e.g., binary_sensor.abc_emergency_home_emergency_warning)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    alert_light:
+      name: Alert Light
+      description: The light to use for alerts
+      selector:
+        entity:
+          filter:
+            - domain: light
+    flash_on_emergency:
+      name: Flash on Emergency Warning
+      description: Flash the light rapidly when Emergency Warning is triggered
+      default: true
+      selector:
+        boolean:
+    flash_count:
+      name: Flash Count
+      description: Number of times to flash the light on Emergency Warning
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+
+trigger:
+  - platform: state
+    entity_id: !input highest_alert_sensor
+    id: level_change
+  - platform: state
+    entity_id: !input emergency_warning_sensor
+    to: "on"
+    id: emergency_flash
+
+variables:
+  flash_enabled: !input flash_on_emergency
+  num_flashes: !input flash_count
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: emergency_flash
+          - "{{ flash_enabled }}"
+        sequence:
+          - repeat:
+              count: "{{ num_flashes }}"
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: !input alert_light
+                  data:
+                    color_name: red
+                    brightness: 255
+                - delay:
+                    seconds: 1
+                - service: light.turn_off
+                  target:
+                    entity_id: !input alert_light
+                - delay:
+                    seconds: 1
+          - service: light.turn_on
+            target:
+              entity_id: !input alert_light
+            data:
+              color_name: red
+              brightness: 128
+      - conditions:
+          - condition: trigger
+            id: level_change
+          - condition: state
+            entity_id: !input highest_alert_sensor
+            state: "Emergency"
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input alert_light
+            data:
+              color_name: red
+              brightness: 255
+      - conditions:
+          - condition: trigger
+            id: level_change
+          - condition: state
+            entity_id: !input highest_alert_sensor
+            state: "Watch and Act"
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input alert_light
+            data:
+              rgb_color: [255, 165, 0]
+              brightness: 255
+      - conditions:
+          - condition: trigger
+            id: level_change
+          - condition: state
+            entity_id: !input highest_alert_sensor
+            state: "Advice"
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input alert_light
+            data:
+              color_name: yellow
+              brightness: 200
+    default:
+      - service: light.turn_off
+        target:
+          entity_id: !input alert_light

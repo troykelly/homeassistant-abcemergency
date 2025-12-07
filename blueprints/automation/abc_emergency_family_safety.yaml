@@ -1,0 +1,82 @@
+blueprint:
+  name: ABC Emergency - Family Safety Monitor
+  description: >
+    Monitor alerts near a family member and notify when they enter an emergency zone.
+    Use Person Mode integration instances to track family members.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_family_safety.yaml
+  input:
+    family_member_alert_sensor:
+      name: Family Member Alert Sensor
+      description: The active alert binary sensor for the family member (e.g., binary_sensor.abc_emergency_dad_active_alert)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    family_member_nearest_sensor:
+      name: Family Member Nearest Incident Sensor
+      description: The nearest incident sensor for the family member (e.g., sensor.abc_emergency_dad_nearest_incident)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: sensor
+    family_member_name:
+      name: Family Member Name
+      description: Name to use in notifications (e.g., "Dad", "Mum", "Sarah")
+      default: "Family Member"
+      selector:
+        text:
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    only_warn_for_warnings:
+      name: Only Notify for Official Warnings
+      description: Only notify when there's an official warning (Advice, Watch and Act, Emergency Warning), not just any incident
+      default: false
+      selector:
+        boolean:
+    warning_sensor:
+      name: Warning Level Sensor (Optional)
+      description: The advice binary sensor to check for official warnings (only used if above option is enabled)
+      default: {}
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+
+trigger:
+  - platform: state
+    entity_id: !input family_member_alert_sensor
+    to: "on"
+
+variables:
+  member_name: !input family_member_name
+  nearest_sensor: !input family_member_nearest_sensor
+  check_warnings: !input only_warn_for_warnings
+  warning_entity: !input warning_sensor
+
+condition:
+  - condition: or
+    conditions:
+      - "{{ not check_warnings }}"
+      - "{{ warning_entity and states(warning_entity) == 'on' }}"
+
+action:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "Emergency Near {{ member_name }}"
+    message: >
+      There's an active emergency near {{ member_name }}'s location.
+      {{ state_attr(nearest_sensor, 'event_type') | default('Incident') }}:
+      {{ state_attr(nearest_sensor, 'headline') | default('Unknown location') }}
+      Distance: {{ states(nearest_sensor) | default('unknown') }}km
+    data:
+      priority: high

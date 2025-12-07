@@ -1,0 +1,118 @@
+blueprint:
+  name: ABC Emergency - Tiered Notifications
+  description: >
+    Send different priority notifications based on warning level.
+    Advice level gets normal priority, Watch and Act gets high priority,
+    and Emergency Warning gets critical priority that bypasses Do Not Disturb.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_tiered_notifications.yaml
+  input:
+    advice_sensor:
+      name: Advice Level Sensor
+      description: The advice level binary sensor (e.g., binary_sensor.abc_emergency_home_advice)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    watch_and_act_sensor:
+      name: Watch and Act Sensor
+      description: The watch and act binary sensor (e.g., binary_sensor.abc_emergency_home_watch_and_act)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    emergency_warning_sensor:
+      name: Emergency Warning Sensor
+      description: The emergency warning binary sensor (e.g., binary_sensor.abc_emergency_home_emergency_warning)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    nearest_incident_sensor:
+      name: Nearest Incident Sensor
+      description: The nearest incident sensor (e.g., sensor.abc_emergency_home_nearest_incident)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: sensor
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    enable_critical_alerts:
+      name: Enable Critical Alerts
+      description: Allow Emergency Warning notifications to bypass Do Not Disturb
+      default: true
+      selector:
+        boolean:
+
+trigger:
+  - platform: state
+    entity_id: !input advice_sensor
+    to: "on"
+    id: advice
+  - platform: state
+    entity_id: !input watch_and_act_sensor
+    to: "on"
+    id: watch_and_act
+  - platform: state
+    entity_id: !input emergency_warning_sensor
+    to: "on"
+    id: emergency_warning
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: emergency_warning
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "EMERGENCY WARNING"
+            message: >
+              ACT IMMEDIATELY! {{ state_attr(states['!input nearest_incident_sensor'].entity_id, 'headline') }}
+              is {{ states(states['!input nearest_incident_sensor'].entity_id) }}km away
+            data:
+              priority: "{{ 'critical' if !input enable_critical_alerts else 'high' }}"
+              ttl: 0
+              channel: alarm_stream
+      - conditions:
+          - condition: trigger
+            id: watch_and_act
+          - condition: state
+            entity_id: !input emergency_warning_sensor
+            state: "off"
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "WATCH AND ACT"
+            message: >
+              Take action now! {{ state_attr(states['!input nearest_incident_sensor'].entity_id, 'headline') }}
+              is {{ states(states['!input nearest_incident_sensor'].entity_id) }}km away
+            data:
+              priority: high
+              ttl: 0
+              channel: alerts
+      - conditions:
+          - condition: trigger
+            id: advice
+          - condition: state
+            entity_id: !input watch_and_act_sensor
+            state: "off"
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "Emergency Advice"
+            message: >
+              {{ state_attr(states['!input nearest_incident_sensor'].entity_id, 'headline') }}
+              ({{ states(states['!input nearest_incident_sensor'].entity_id) }}km away)

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -62,6 +62,7 @@ from .helpers import (
     get_bearing,
     get_state_from_coordinates,
 )
+from .helpers_geo import point_in_polygons
 from .models import Coordinate, CoordinatorData, EmergencyIncident
 
 if TYPE_CHECKING:
@@ -81,6 +82,17 @@ ALERT_LEVEL_PRIORITY: dict[str, int] = {
 # Storage configuration for incident ID persistence
 STORAGE_VERSION = 1
 STORAGE_KEY_PREFIX = f"{DOMAIN}_seen_incidents"
+
+
+class _ContainmentSummary(TypedDict):
+    """TypedDict for containment summary data."""
+
+    containing_incidents: list[EmergencyIncident]
+    inside_polygon: bool
+    inside_emergency_warning: bool
+    inside_watch_and_act: bool
+    inside_advice: bool
+    highest_containing_alert_level: str
 
 
 class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
@@ -382,6 +394,10 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
     ) -> CoordinatorData:
         """Process emergencies for zone/person mode (with distance filtering).
 
+        CRITICAL: Containment is checked for ALL incidents BEFORE radius filtering.
+        This ensures that large polygons whose centroid is far away but which still
+        contain the monitored point are properly detected.
+
         Args:
             emergencies: List of emergency objects from the API.
             latitude: Reference latitude.
@@ -391,20 +407,40 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         Returns:
             Processed coordinator data.
         """
-        incidents: list[EmergencyIncident] = []
+        all_incidents: list[EmergencyIncident] = []
 
         for emergency in emergencies:
             incident = self._create_incident(emergency, latitude=latitude, longitude=longitude)
             if incident:
-                incidents.append(incident)
+                all_incidents.append(incident)
+
+        # CRITICAL: Check containment for ALL incidents BEFORE radius filtering
+        # This is required because a polygon's centroid may be far away but the
+        # polygon itself may still contain the monitored point (issue #73)
+        containing_incidents: list[EmergencyIncident] = []
+        for incident in all_incidents:
+            if incident.has_polygon:
+                contains = point_in_polygons(latitude, longitude, incident.polygons)
+                # Use object.__setattr__ to modify frozen-like dataclass field
+                object.__setattr__(incident, "contains_point", contains)
+                if contains:
+                    containing_incidents.append(incident)
+            else:
+                # Point geometry cannot contain the monitored point
+                object.__setattr__(incident, "contains_point", False)
+
+        # Calculate containment summary fields
+        containment_data = self._calculate_containment_summary(containing_incidents)
 
         # Sort by distance (nearest first)
-        incidents.sort(key=lambda i: i.distance_km if i.distance_km is not None else float("inf"))
+        all_incidents.sort(
+            key=lambda i: i.distance_km if i.distance_km is not None else float("inf")
+        )
 
         # Calculate nearby incidents based on per-type radii
         nearby_incidents = [
             i
-            for i in incidents
+            for i in all_incidents
             if i.distance_km is not None
             and i.distance_km <= self._get_radius_for_incident(i.event_type)
         ]
@@ -412,8 +448,8 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         # Find nearest incident
         nearest_incident: EmergencyIncident | None = None
         nearest_distance: float | None = None
-        if incidents:
-            nearest_incident = incidents[0]
+        if all_incidents:
+            nearest_incident = all_incidents[0]
             nearest_distance = nearest_incident.distance_km
 
         # Determine highest alert level in nearby area
@@ -427,7 +463,7 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
         return CoordinatorData(
             incidents=nearby_incidents,  # Only include incidents within configured radii
-            total_count=len(incidents),  # Total in the state for reference
+            total_count=len(all_incidents),  # Total in the state for reference
             nearby_count=len(nearby_incidents),
             nearest_distance_km=nearest_distance,
             nearest_incident=nearest_incident,
@@ -437,6 +473,55 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             location_available=True,
             current_latitude=latitude,
             current_longitude=longitude,
+            containing_incidents=containment_data["containing_incidents"],
+            inside_polygon=containment_data["inside_polygon"],
+            inside_emergency_warning=containment_data["inside_emergency_warning"],
+            inside_watch_and_act=containment_data["inside_watch_and_act"],
+            inside_advice=containment_data["inside_advice"],
+            highest_containing_alert_level=containment_data["highest_containing_alert_level"],
+        )
+
+    def _calculate_containment_summary(
+        self,
+        containing_incidents: list[EmergencyIncident],
+    ) -> _ContainmentSummary:
+        """Calculate containment summary fields from containing incidents.
+
+        Args:
+            containing_incidents: List of incidents whose polygons contain the point.
+
+        Returns:
+            Dictionary with containment summary fields.
+        """
+        inside_polygon = len(containing_incidents) > 0
+
+        # Check alert levels in containing incidents
+        inside_emergency_warning = False
+        inside_watch_and_act = False
+        inside_advice = False
+
+        for incident in containing_incidents:
+            level = incident.alert_level
+            if level == AlertLevel.EMERGENCY:
+                inside_emergency_warning = True
+                inside_watch_and_act = True  # Emergency implies Watch and Act
+                inside_advice = True  # Emergency implies Advice
+            elif level == AlertLevel.WATCH_AND_ACT:
+                inside_watch_and_act = True
+                inside_advice = True  # Watch and Act implies Advice
+            elif level == AlertLevel.ADVICE:
+                inside_advice = True
+
+        # Calculate highest containing alert level
+        highest_containing_alert_level = self._get_highest_alert_level(containing_incidents)
+
+        return _ContainmentSummary(
+            containing_incidents=containing_incidents,
+            inside_polygon=inside_polygon,
+            inside_emergency_warning=inside_emergency_warning,
+            inside_watch_and_act=inside_watch_and_act,
+            inside_advice=inside_advice,
+            highest_containing_alert_level=highest_containing_alert_level,
         )
 
     def _create_incident(

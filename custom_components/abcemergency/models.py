@@ -73,6 +73,7 @@ class EmergencyIncident:
     geometry_type: str | None = None
     polygons: list[StoredPolygon] | None = None
     has_polygon: bool = False
+    contains_point: bool | None = None
 
 
 @dataclass
@@ -93,6 +94,12 @@ class CoordinatorData:
         location_available: Whether location is available (for person mode).
         current_latitude: Current latitude used for calculations.
         current_longitude: Current longitude used for calculations.
+        containing_incidents: List of incidents whose polygons contain the monitored point.
+        inside_polygon: True if monitored point is inside any incident polygon.
+        inside_emergency_warning: True if inside polygon with extreme alert level.
+        inside_watch_and_act: True if inside polygon with severe or higher alert level.
+        inside_advice: True if inside polygon with moderate or higher alert level.
+        highest_containing_alert_level: Highest alert level among containing incidents.
     """
 
     incidents: list[EmergencyIncident] = field(default_factory=list)
@@ -106,3 +113,9 @@ class CoordinatorData:
     location_available: bool = True
     current_latitude: float | None = None
     current_longitude: float | None = None
+    containing_incidents: list[EmergencyIncident] = field(default_factory=list)
+    inside_polygon: bool = False
+    inside_emergency_warning: bool = False
+    inside_watch_and_act: bool = False
+    inside_advice: bool = False
+    highest_containing_alert_level: str = ""

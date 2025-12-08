@@ -2145,3 +2145,818 @@ class TestPolygonGeometryStorage:
         # because centroid calculation uses triangulation, not simple average
         assert incident.location.latitude == pytest.approx(-33.4, abs=0.1)
         assert incident.location.longitude == pytest.approx(150.4, abs=0.1)
+
+
+class TestContainmentDetection:
+    """Test point-in-polygon containment detection in coordinator."""
+
+    @pytest.fixture
+    def api_response_with_containing_polygon(self) -> dict:
+        """API response with a polygon that contains the monitored point."""
+        # Polygon encompasses Sydney CBD (-33.8688, 151.2093)
+        return {
+            "emergencies": [
+                {
+                    "id": "AUREMER-containing",
+                    "headline": "Bushfire Containing Sydney",
+                    "to": "/emergency/warning/AUREMER-containing",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "fire",
+                        "labelText": "Bushfire",
+                    },
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "5000 ha",
+                        "status": "Out of control",
+                        "source": "NSW Rural Fire Service",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                # Large polygon around Sydney
+                                [150.0, -33.0],
+                                [152.0, -33.0],
+                                [152.0, -35.0],
+                                [150.0, -35.0],
+                                [150.0, -33.0],
+                            ]
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -36.0], [153.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+    @pytest.fixture
+    def api_response_with_far_centroid_but_containing_polygon(self) -> dict:
+        """API response where centroid is far but polygon still contains point.
+
+        This tests the critical requirement from issue #73: containment must be
+        checked for ALL incidents BEFORE radius filtering, because a polygon
+        centroid may be far away but the polygon itself may still contain the
+        monitored point.
+        """
+        # Large irregular polygon: centroid would be ~100km from Sydney
+        # but the polygon extends to include Sydney
+        return {
+            "emergencies": [
+                {
+                    "id": "AUREMER-far-centroid",
+                    "headline": "Large Bushfire Far Centroid",
+                    "to": "/emergency/warning/AUREMER-far-centroid",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "fire",
+                        "labelText": "Bushfire",
+                    },
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "50000 ha",
+                        "status": "Out of control",
+                        "source": "NSW Rural Fire Service",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                # Polygon extends west and south far from Sydney
+                                # but includes Sydney at the east edge
+                                [148.0, -32.0],  # Far west-north
+                                [152.0, -32.0],  # East-north (past Sydney longitude)
+                                [152.0, -35.0],  # East-south (past Sydney latitude)
+                                [148.0, -36.0],  # Far west-south
+                                [148.0, -32.0],
+                            ]
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[147.0, -37.0], [153.0, -31.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+    async def test_incident_contains_point_field_true_when_inside(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test incident.contains_point is True when monitored point is inside polygon."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,  # Sydney CBD
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        assert data.incidents[0].contains_point is True
+
+    async def test_incident_contains_point_field_false_when_outside(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test incident.contains_point is False when monitored point is outside polygon.
+
+        Note: The polygon is positioned close enough to be within radius filtering
+        so the incident appears in data.incidents.
+        """
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-not-containing",
+                    "headline": "Bushfire Near But Not Containing Sydney",
+                    "to": "/emergency/warning/AUREMER-not-containing",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "fire",
+                        "labelText": "Bushfire",
+                    },
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "500 ha",
+                        "status": "Out of control",
+                        "source": "NSW Rural Fire Service",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                # Polygon near Sydney but NOT containing Sydney CBD
+                                # This polygon is west of Sydney (~20km away)
+                                [150.9, -33.7],
+                                [151.1, -33.7],
+                                [151.1, -34.0],
+                                [150.9, -34.0],
+                                [150.9, -33.7],
+                            ]
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[150.8, -34.1], [151.2, -33.6]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,  # Sydney CBD - outside the polygon
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        assert data.incidents[0].contains_point is False
+        # Verify the containment summary is correct
+        assert data.inside_polygon is False
+        assert len(data.containing_incidents) == 0
+
+    async def test_coordinator_data_inside_polygon_true_when_contained(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test CoordinatorData.inside_polygon is True when point is inside any polygon."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.inside_polygon is True
+
+    async def test_coordinator_data_containing_incidents_list(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test CoordinatorData.containing_incidents contains incidents whose polygons contain point."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.containing_incidents is not None
+        assert len(data.containing_incidents) == 1
+        assert data.containing_incidents[0].id == "AUREMER-containing"
+
+    async def test_inside_emergency_warning_true_when_inside_extreme(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test inside_emergency_warning is True when inside extreme alert polygon."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.inside_emergency_warning is True
+
+    async def test_inside_watch_and_act_true_when_inside_severe(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_far_centroid_but_containing_polygon: dict,
+    ) -> None:
+        """Test inside_watch_and_act is True when inside severe alert polygon."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_far_centroid_but_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.inside_watch_and_act is True
+
+    async def test_inside_advice_true_when_inside_moderate(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test inside_advice is True when inside moderate alert polygon."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-advice",
+                    "headline": "Advisory Zone",
+                    "to": "/emergency/warning/AUREMER-advice",
+                    "alertLevelInfoPrepared": {
+                        "text": "Advice",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "100 ha",
+                        "status": "Being controlled",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [150.0, -33.0],
+                                [152.0, -33.0],
+                                [152.0, -35.0],
+                                [150.0, -35.0],
+                                [150.0, -33.0],
+                            ]
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -36.0], [153.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.inside_advice is True
+
+    async def test_highest_containing_alert_level(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test highest_containing_alert_level returns highest alert level among containing incidents."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-moderate-containing",
+                    "headline": "Advice Zone",
+                    "to": "/emergency/warning/AUREMER-moderate-containing",
+                    "alertLevelInfoPrepared": {
+                        "text": "Advice",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
+                    "cardBody": {
+                        "type": "Storm",
+                        "size": None,
+                        "status": "Active",
+                        "source": "BOM",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [150.0, -33.0],
+                                [152.0, -33.0],
+                                [152.0, -35.0],
+                                [150.0, -35.0],
+                                [150.0, -33.0],
+                            ]
+                        ],
+                    },
+                },
+                {
+                    "id": "AUREMER-severe-containing",
+                    "headline": "Watch and Act Zone",
+                    "to": "/emergency/warning/AUREMER-severe-containing",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "500 ha",
+                        "status": "Out of control",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [150.0, -33.0],
+                                [152.0, -33.0],
+                                [152.0, -35.0],
+                                [150.0, -35.0],
+                                [150.0, -33.0],
+                            ]
+                        ],
+                    },
+                },
+            ],
+            "features": [],
+            "mapBound": [[149.0, -36.0], [153.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 2,
+            "stateCount": 2,
+        }
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.highest_containing_alert_level == AlertLevel.WATCH_AND_ACT
+
+    async def test_containment_checked_before_radius_filtering(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        api_response_with_far_centroid_but_containing_polygon: dict,
+    ) -> None:
+        """Test containment is checked for ALL incidents before radius filtering.
+
+        CRITICAL TEST: This validates issue #73 requirement that containment
+        must be checked before radius filtering. The polygon's centroid is far
+        (~100km) but the polygon still contains the monitored point.
+        """
+        # Use small radius that would exclude based on centroid distance
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+                CONF_RADIUS_BUSHFIRE: 10,  # 10km - centroid is ~100km away
+                CONF_RADIUS_EARTHQUAKE: 10,
+                CONF_RADIUS_STORM: 10,
+                CONF_RADIUS_FLOOD: 10,
+                CONF_RADIUS_FIRE: 10,
+                CONF_RADIUS_HEAT: 10,
+                CONF_RADIUS_OTHER: 10,
+            },
+            unique_id="abc_emergency_zone_small_radius",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_far_centroid_but_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            entry,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Even with small radius, containment should be detected
+        # because containment checks ALL incidents before radius filtering
+        assert data.inside_polygon is True
+        assert data.inside_watch_and_act is True
+        assert len(data.containing_incidents) == 1
+
+    async def test_state_mode_no_containment_fields(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test state mode has no containment detection (no monitored point)."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-state-incident",
+                    "headline": "Some Bushfire",
+                    "to": "/emergency/warning/AUREMER-state-incident",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "1000 ha",
+                        "status": "Out of control",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [150.0, -33.0],
+                                [152.0, -33.0],
+                                [152.0, -35.0],
+                                [150.0, -35.0],
+                                [150.0, -33.0],
+                            ]
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -36.0], [153.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        # State mode has no monitored point, so containment fields should be empty/False
+        assert data.inside_polygon is False
+        assert data.inside_emergency_warning is False
+        assert data.inside_watch_and_act is False
+        assert data.inside_advice is False
+        assert data.containing_incidents == []
+        assert data.highest_containing_alert_level == ""
+        # Incidents in state mode should have contains_point as None (not applicable)
+        assert data.incidents[0].contains_point is None
+
+    async def test_person_mode_containment_detection(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test person mode has containment detection based on person location."""
+        # Set up person entity in Sydney
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"latitude": -33.8688, "longitude": 151.2093},
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.inside_polygon is True
+        assert data.inside_emergency_warning is True
+        assert len(data.containing_incidents) == 1
+
+    async def test_point_geometry_no_containment(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test Point geometry (no polygon) cannot contain the monitored point."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-point-only",
+                    "headline": "Point Fire",
+                    "to": "/emergency/warning/AUREMER-point-only",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Fire"},
+                    "cardBody": {
+                        "type": "Structure Fire",
+                        "size": None,
+                        "status": "Under control",
+                        "source": "FRNSW",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "Point",
+                        "coordinates": [151.2093, -33.8688],  # At the monitored location
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[150.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Point geometry has no polygon, so contains_point should be False
+        assert data.incidents[0].contains_point is False
+        assert data.incidents[0].has_polygon is False
+        assert data.inside_polygon is False
+
+    async def test_containment_with_no_incidents(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        empty_api_response: dict,
+    ) -> None:
+        """Test containment fields are properly initialized with no incidents."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=empty_api_response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert data.inside_polygon is False
+        assert data.inside_emergency_warning is False
+        assert data.inside_watch_and_act is False
+        assert data.inside_advice is False
+        assert data.containing_incidents == []
+        assert data.highest_containing_alert_level == ""
+
+
+class TestCoordinatorDataContainmentFields:
+    """Test CoordinatorData containment field defaults and types."""
+
+    def test_coordinator_data_containment_defaults(self) -> None:
+        """Test CoordinatorData has correct containment field defaults."""
+        data = CoordinatorData()
+
+        # New containment fields should have proper defaults
+        assert data.containing_incidents == []
+        assert data.inside_polygon is False
+        assert data.inside_emergency_warning is False
+        assert data.inside_watch_and_act is False
+        assert data.inside_advice is False
+        assert data.highest_containing_alert_level == ""
+
+
+class TestEmergencyIncidentContainsPointField:
+    """Test EmergencyIncident contains_point field."""
+
+    def test_emergency_incident_contains_point_default(self) -> None:
+        """Test EmergencyIncident.contains_point defaults to None."""
+        from custom_components.abcemergency.models import Coordinate
+
+        incident = EmergencyIncident(
+            id="test",
+            headline="Test",
+            alert_level="minor",
+            alert_text="",
+            event_type="Test",
+            event_icon="other",
+            status=None,
+            size=None,
+            source="Test",
+            location=Coordinate(latitude=-33.0, longitude=151.0),
+            updated=datetime.now(),
+        )
+
+        # Default should be None (not yet checked)
+        assert incident.contains_point is None
+
+    def test_emergency_incident_contains_point_can_be_set(self) -> None:
+        """Test EmergencyIncident.contains_point can be set to True/False."""
+        from custom_components.abcemergency.models import Coordinate
+
+        incident = EmergencyIncident(
+            id="test",
+            headline="Test",
+            alert_level="minor",
+            alert_text="",
+            event_type="Test",
+            event_icon="other",
+            status=None,
+            size=None,
+            source="Test",
+            location=Coordinate(latitude=-33.0, longitude=151.0),
+            updated=datetime.now(),
+            contains_point=True,
+        )
+
+        assert incident.contains_point is True

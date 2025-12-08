@@ -62,7 +62,7 @@ from .helpers import (
     get_bearing,
     get_state_from_coordinates,
 )
-from .helpers_geo import point_in_polygons
+from .helpers_geo import point_in_incident
 from .models import Coordinate, CoordinatorData, EmergencyIncident
 
 if TYPE_CHECKING:
@@ -437,7 +437,8 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         containing_incidents: list[EmergencyIncident] = []
         for incident in all_incidents:
             if incident.has_polygon:
-                contains = point_in_polygons(latitude, longitude, incident.polygons)
+                # Use cached prepared geometries for efficient containment check
+                contains = point_in_incident(latitude, longitude, incident)
                 # Use object.__setattr__ to modify frozen-like dataclass field
                 object.__setattr__(incident, "contains_point", contains)
                 if contains:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .const import StoredPolygon
@@ -74,6 +74,8 @@ class EmergencyIncident:
     polygons: list[StoredPolygon] | None = None
     has_polygon: bool = False
     contains_point: bool | None = None
+    # Cache for prepared Shapely geometries (not serializable, excluded from repr)
+    _prepared_polygons: list[Any] | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass

@@ -59,7 +59,8 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to ABC Emergency API",
-      "unknown": "Unexpected error occurred",
+      "api_error": "ABC Emergency API returned an error. Please try again later.",
+      "unknown": "Unexpected error occurred. Check logs for details.",
       "name_required": "Please enter a zone name",
       "person_required": "Please select a person entity"
     },

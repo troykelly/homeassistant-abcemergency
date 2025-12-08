@@ -3590,3 +3590,816 @@ class TestContainmentEventsPersonMode:
 
         # Should NOT fire exit event when location becomes unknown
         assert len(exited_events) == 0
+
+
+class TestContainmentEventEdgeCases:
+    """Test containment event edge cases including polygon changes and severity changes.
+
+    These tests verify the refactored containment tracking that tracks actual
+    containment state rather than just incident IDs. This enables detection of:
+    - Polygon expansion (incident existed but wasn't containing, now is)
+    - Polygon contraction (incident was containing, still exists but isn't)
+    - Severity changes (alert level changed while inside polygon)
+    """
+
+    @pytest.fixture
+    def polygon_containing_sydney(self) -> list[list[list[float]]]:
+        """Create a polygon that contains Sydney coordinates (-33.8688, 151.2093)."""
+        return [
+            [
+                [151.15, -33.92],
+                [151.25, -33.92],
+                [151.25, -33.82],
+                [151.15, -33.82],
+                [151.15, -33.92],
+            ]
+        ]
+
+    @pytest.fixture
+    def polygon_not_containing_sydney(self) -> list[list[list[float]]]:
+        """Create a polygon that does NOT contain Sydney coordinates."""
+        return [
+            [
+                [150.00, -34.50],
+                [150.10, -34.50],
+                [150.10, -34.40],
+                [150.00, -34.40],
+                [150.00, -34.50],
+            ]
+        ]
+
+    def _create_api_response(
+        self,
+        incident_id: str,
+        polygon: list[list[list[float]]],
+        alert_level: str = "severe",
+        alert_text: str = "Watch and Act",
+    ) -> dict:
+        """Create API response with specified polygon and alert level."""
+        return {
+            "emergencies": [
+                {
+                    "id": incident_id,
+                    "headline": f"Test Incident {incident_id}",
+                    "to": f"/emergency/warning/{incident_id}",
+                    "alertLevelInfoPrepared": {
+                        "text": alert_text,
+                        "level": alert_level,
+                        "style": alert_level,
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2024-01-15T01:00:00+00:00",
+                        "formattedTime": "12:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2024-01-15T01:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "Large",
+                        "status": "Going",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": polygon,
+                    },
+                }
+            ],
+            "features": [],
+        }
+
+    async def test_entered_event_fires_when_polygon_expands(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_not_containing_sydney: list[list[list[float]]],
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test entered event fires when existing incident polygon expands to contain point.
+
+        This tests the key fix for Issue #91: when an incident's polygon changes
+        from not containing to containing, the entered event should fire even
+        though the incident ID already existed.
+        """
+        # Same incident ID, but polygon changes from not containing to containing
+        response_not_containing = self._create_api_response(
+            "incident-123", polygon_not_containing_sydney
+        )
+        response_containing = self._create_api_response("incident-123", polygon_containing_sydney)
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                response_not_containing,  # First: incident exists but doesn't contain
+                response_containing,  # Second: same incident now contains (polygon expanded)
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        entered_events: list = []
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
+
+        # First refresh - incident exists but doesn't contain point
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(entered_events) == 0
+
+        # Second refresh - same incident now contains point (polygon expanded)
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Should fire entered event because containment state changed
+        assert len(entered_events) == 1
+        assert entered_events[0].data["incident_id"] == "incident-123"
+
+    async def test_exited_event_fires_when_polygon_contracts(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+        polygon_not_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test exited event fires when existing incident polygon shrinks to not contain point.
+
+        This tests the key fix for Issue #91: when an incident's polygon changes
+        from containing to not containing, the exited event should fire even
+        though the incident ID still exists.
+        """
+        # Same incident ID, but polygon changes from containing to not containing
+        response_containing = self._create_api_response("incident-456", polygon_containing_sydney)
+        response_not_containing = self._create_api_response(
+            "incident-456", polygon_not_containing_sydney
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                response_containing,  # First: incident contains point
+                response_not_containing,  # Second: same incident no longer contains
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        exited_events: list = []
+        hass.bus.async_listen("abc_emergency_exited_polygon", lambda e: exited_events.append(e))
+
+        # First refresh - inside polygon (baseline)
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(exited_events) == 0
+
+        # Second refresh - same incident but polygon no longer contains
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Should fire exited event because containment state changed
+        assert len(exited_events) == 1
+        assert exited_events[0].data["incident_id"] == "incident-456"
+
+    async def test_severity_changed_event_fires_on_escalation(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test severity changed event fires when alert level escalates while inside.
+
+        This tests Issue #92: when the severity of an incident changes from
+        Advice to Emergency Warning while the point is inside, a severity
+        changed event should fire.
+        """
+        response_advice = self._create_api_response(
+            "incident-escalate",
+            polygon_containing_sydney,
+            alert_level="moderate",
+            alert_text="Advice",
+        )
+        response_emergency = self._create_api_response(
+            "incident-escalate",
+            polygon_containing_sydney,
+            alert_level="extreme",
+            alert_text="Emergency Warning",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                response_advice,  # First: Advice level
+                response_emergency,  # Second: Escalated to Emergency Warning
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        severity_events: list = []
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        # First refresh - inside at Advice level
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(severity_events) == 0
+
+        # Second refresh - escalated to Emergency Warning
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(severity_events) == 1
+        event_data = severity_events[0].data
+        assert event_data["incident_id"] == "incident-escalate"
+        assert event_data["previous_alert_level"] == "moderate"
+        assert event_data["previous_alert_text"] == "Advice"
+        assert event_data["new_alert_level"] == "extreme"
+        assert event_data["new_alert_text"] == "Emergency Warning"
+        assert event_data["escalated"] is True
+
+    async def test_severity_changed_event_fires_on_deescalation(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test severity changed event fires when alert level de-escalates while inside.
+
+        This tests Issue #92: when the severity decreases (e.g., Emergency Warning
+        to Advice), a severity changed event should fire with escalated=False.
+        """
+        response_emergency = self._create_api_response(
+            "incident-deescalate",
+            polygon_containing_sydney,
+            alert_level="extreme",
+            alert_text="Emergency Warning",
+        )
+        response_advice = self._create_api_response(
+            "incident-deescalate",
+            polygon_containing_sydney,
+            alert_level="moderate",
+            alert_text="Advice",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                response_emergency,  # First: Emergency Warning
+                response_advice,  # Second: De-escalated to Advice
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        severity_events: list = []
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(severity_events) == 1
+        event_data = severity_events[0].data
+        assert event_data["previous_alert_level"] == "extreme"
+        assert event_data["new_alert_level"] == "moderate"
+        assert event_data["escalated"] is False
+
+    async def test_no_severity_event_when_level_unchanged(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test no severity changed event when alert level is unchanged."""
+        response = self._create_api_response(
+            "incident-unchanged",
+            polygon_containing_sydney,
+            alert_level="severe",
+            alert_text="Watch and Act",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        severity_events: list = []
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        # Multiple refreshes with same alert level
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # No severity changed events
+        assert len(severity_events) == 0
+
+    async def test_no_severity_event_when_not_containing(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_not_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test no severity changed event for incidents not containing the point."""
+        response_advice = self._create_api_response(
+            "incident-outside",
+            polygon_not_containing_sydney,
+            alert_level="moderate",
+            alert_text="Advice",
+        )
+        response_emergency = self._create_api_response(
+            "incident-outside",
+            polygon_not_containing_sydney,
+            alert_level="extreme",
+            alert_text="Emergency Warning",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[response_advice, response_emergency]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        severity_events: list = []
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # No events since point was never inside polygon
+        assert len(severity_events) == 0
+
+    async def test_polygon_expansion_and_severity_change_combined(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_not_containing_sydney: list[list[list[float]]],
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test when polygon expands AND severity changes in same update.
+
+        When polygon expands to contain point, only entered event should fire,
+        not severity changed (since there's no previous containing state).
+        """
+        response_outside_advice = self._create_api_response(
+            "incident-combo",
+            polygon_not_containing_sydney,
+            alert_level="moderate",
+            alert_text="Advice",
+        )
+        response_inside_emergency = self._create_api_response(
+            "incident-combo",
+            polygon_containing_sydney,
+            alert_level="extreme",
+            alert_text="Emergency Warning",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[response_outside_advice, response_inside_emergency]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        entered_events: list = []
+        severity_events: list = []
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Should fire entered event (polygon expanded to contain)
+        assert len(entered_events) == 1
+        # Should NOT fire severity event (no previous containing state to compare)
+        assert len(severity_events) == 0
+
+    async def test_no_event_when_still_inside_unchanged(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test no entered/exited event when containment state unchanged.
+
+        When point was inside and remains inside with same alert level,
+        only inside_polygon event should fire, not entered or severity_changed.
+        """
+        response = self._create_api_response("incident-stable", polygon_containing_sydney)
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        entered_events: list = []
+        exited_events: list = []
+        inside_events: list = []
+        severity_events: list = []
+
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
+        hass.bus.async_listen("abc_emergency_exited_polygon", lambda e: exited_events.append(e))
+        hass.bus.async_listen("abc_emergency_inside_polygon", lambda e: inside_events.append(e))
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        # First refresh - baseline (no events on first load)
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Second refresh - still inside, unchanged
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Third refresh - still inside, unchanged
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Only inside_polygon events should fire (one per refresh after first)
+        assert len(entered_events) == 0  # No re-entry
+        assert len(exited_events) == 0  # No exit
+        assert len(inside_events) == 2  # Two inside events (second and third refresh)
+        assert len(severity_events) == 0  # No severity change
+
+    async def test_severity_changed_event_data_structure(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test that severity changed event has all expected data fields."""
+        response_watch = self._create_api_response(
+            "incident-data-test",
+            polygon_containing_sydney,
+            alert_level="severe",
+            alert_text="Watch and Act",
+        )
+        response_emergency = self._create_api_response(
+            "incident-data-test",
+            polygon_containing_sydney,
+            alert_level="extreme",
+            alert_text="Emergency Warning",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[response_watch, response_emergency]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        severity_events: list = []
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(severity_events) == 1
+        event_data = severity_events[0].data
+
+        # Verify all standard containment event fields
+        expected_standard_fields = [
+            "config_entry_id",
+            "instance_name",
+            "instance_type",
+            "incident_id",
+            "headline",
+            "event_type",
+            "event_icon",
+            "alert_level",
+            "alert_text",
+            "latitude",
+            "longitude",
+            "monitored_latitude",
+            "monitored_longitude",
+            "status",
+            "source",
+            "updated",
+        ]
+        for field in expected_standard_fields:
+            assert field in event_data, f"Missing standard field: {field}"
+
+        # Verify severity-specific fields
+        severity_specific_fields = [
+            "previous_alert_level",
+            "previous_alert_text",
+            "new_alert_level",
+            "new_alert_text",
+            "escalated",
+        ]
+        for field in severity_specific_fields:
+            assert field in event_data, f"Missing severity field: {field}"
+
+    async def test_severity_watch_and_act_to_advice(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test severity change from Watch and Act to Advice (de-escalation)."""
+        response_watch = self._create_api_response(
+            "incident-waa",
+            polygon_containing_sydney,
+            alert_level="severe",
+            alert_text="Watch and Act",
+        )
+        response_advice = self._create_api_response(
+            "incident-waa",
+            polygon_containing_sydney,
+            alert_level="moderate",
+            alert_text="Advice",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[response_watch, response_advice]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        severity_events: list = []
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(severity_events) == 1
+        event_data = severity_events[0].data
+        assert event_data["previous_alert_level"] == "severe"
+        assert event_data["new_alert_level"] == "moderate"
+        assert event_data["escalated"] is False
+
+    async def test_severity_advice_to_watch_and_act(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test severity change from Advice to Watch and Act (escalation)."""
+        response_advice = self._create_api_response(
+            "incident-atw",
+            polygon_containing_sydney,
+            alert_level="moderate",
+            alert_text="Advice",
+        )
+        response_watch = self._create_api_response(
+            "incident-atw",
+            polygon_containing_sydney,
+            alert_level="severe",
+            alert_text="Watch and Act",
+        )
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[response_advice, response_watch]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        severity_events: list = []
+        hass.bus.async_listen(
+            "abc_emergency_containment_severity_changed", lambda e: severity_events.append(e)
+        )
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(severity_events) == 1
+        event_data = severity_events[0].data
+        assert event_data["previous_alert_level"] == "moderate"
+        assert event_data["new_alert_level"] == "severe"
+        assert event_data["escalated"] is True
+
+    async def test_containment_tracking_handles_incident_not_containing_in_previous_state(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        polygon_containing_sydney: list[list[list[float]]],
+        polygon_not_containing_sydney: list[list[list[float]]],
+    ) -> None:
+        """Test that previous containment state with was_containing=False is handled.
+
+        This covers line 1007 - the continue statement when iterating previous
+        state and finding an incident that wasn't containing. We need to:
+        1. First refresh with some incident (populates first_containment_check)
+        2. Second refresh with a non-containing incident (stores was_containing=False)
+        3. Third refresh removes it (iterates previous state, should skip exit event)
+        """
+        # First have one containing incident, then add another non-containing, then remove it
+        response_containing_only = self._create_api_response(
+            "incident-inside", polygon_containing_sydney
+        )
+        # Two incidents: one containing, one not
+        response_both = {
+            "emergencies": [
+                {
+                    "id": "incident-inside",
+                    "headline": "Test Inside",
+                    "to": "/emergency/warning/incident-inside",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2024-01-15T01:00:00+00:00",
+                        "formattedTime": "12:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2024-01-15T01:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "Large",
+                        "status": "Going",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": polygon_containing_sydney,
+                    },
+                },
+                {
+                    "id": "incident-outside",
+                    "headline": "Test Outside",
+                    "to": "/emergency/warning/incident-outside",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2024-01-15T01:00:00+00:00",
+                        "formattedTime": "12:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2024-01-15T01:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "Large",
+                        "status": "Going",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": polygon_not_containing_sydney,
+                    },
+                },
+            ],
+            "features": [],
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                response_containing_only,  # First: one containing (populates first check)
+                response_both,  # Second: add non-containing incident (was_containing=False stored)
+                response_containing_only,  # Third: remove non-containing (should NOT fire exit)
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        exited_events: list = []
+        hass.bus.async_listen("abc_emergency_exited_polygon", lambda e: exited_events.append(e))
+
+        # First refresh - baseline with one containing incident
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Second refresh - add non-containing incident
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Third refresh - remove non-containing incident
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Should NOT fire exited event for the outside incident because it was never containing
+        # Only inside_polygon events should have fired for incident-inside
+        assert len(exited_events) == 0

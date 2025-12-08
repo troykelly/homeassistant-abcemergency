@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import urlencode
 
 from aiohttp import ClientError, ClientResponseError, ClientTimeout
@@ -142,7 +142,7 @@ class ABCEmergencyClient:
             params={"state": state.lower()},
         )
 
-        return result  # type: ignore[return-value]
+        return cast(EmergencySearchResponse, result)
 
     async def async_get_emergencies_by_geohash(
         self,
@@ -174,7 +174,7 @@ class ABCEmergencyClient:
             params={"geohashes": geohash_param},
         )
 
-        return result  # type: ignore[return-value]
+        return cast(EmergencySearchResponse, result)
 
     async def async_get_all_emergencies(self) -> EmergencyFeedResponse:
         """Fetch all emergencies across Australia.
@@ -193,4 +193,4 @@ class ABCEmergencyClient:
 
         result = await self._async_request("emergencyFeed")
 
-        return result  # type: ignore[return-value]
+        return cast(EmergencyFeedResponse, result)

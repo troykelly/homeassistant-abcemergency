@@ -406,6 +406,8 @@ emergency_warning: ON → watch_and_act: ON → advice: ON → active_alert: ON
 
 These sensors indicate when your monitored location is **inside** the actual boundary of an emergency incident polygon. This is different from proximity sensors which only check distance.
 
+> **Important:** For comprehensive containment documentation, ready-to-use blueprints, and safety automations, see the **[Containment Safety Guide](containment-safety.md)**.
+
 > **Important:** Containment sensors are only available for Zone and Person instance types. State mode monitors an entire state, not a specific point, so containment detection doesn't apply.
 
 ### inside_polygon
@@ -512,6 +514,8 @@ incidents:
 ## Containment Events
 
 The integration fires events when your containment status changes. These are useful for automation triggers.
+
+> **Important:** For comprehensive containment documentation, ready-to-use blueprints, and safety automations, see the **[Containment Safety Guide](containment-safety.md)**.
 
 ### abc_emergency_entered_polygon
 

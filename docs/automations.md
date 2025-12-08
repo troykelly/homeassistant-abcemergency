@@ -15,6 +15,8 @@ Ready-to-use Home Assistant automations for ABC Emergency alerts.
 
 Import these ready-to-use blueprints with one click:
 
+### Proximity Blueprints
+
 | Blueprint | Description | Import |
 |-----------|-------------|--------|
 | **Basic Alert** | Simple notification for any alert | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_basic_alert.yaml) |
@@ -23,6 +25,21 @@ Import these ready-to-use blueprints with one click:
 | **TTS Announcement** | Announce on smart speakers | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_tts_announcement.yaml) |
 | **Light Alert** | Flash/color lights based on alert level | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_light_alert.yaml) |
 | **Family Safety** | Monitor alerts near family members | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_family_safety.yaml) |
+
+### Containment Safety Blueprints
+
+**Critical for life-safety.** These blueprints detect when you're actually **inside** emergency zones.
+
+See the **[Containment Safety Guide](containment-safety.md)** for comprehensive documentation.
+
+| Blueprint | Description | Import |
+|-----------|-------------|--------|
+| **Entered Zone Alert** | Notify when entering any emergency zone | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_entered_zone.yaml) |
+| **Exited Zone Alert** | Notify when leaving an emergency zone | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_exited_zone.yaml) |
+| **Severity Escalation** | Critical alert when emergency escalates while inside | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_severity_escalation.yaml) |
+| **Inside Emergency Warning** | Maximum urgency when inside red-level zone | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_inside_emergency_warning.yaml) |
+| **Family Member Inside Zone** | Alert family when someone enters a zone | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_family_inside_zone.yaml) |
+| **Periodic Zone Reminder** | Recurring alerts while inside a zone | [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftroykelly%2Fhomeassistant-abcemergency%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fabc_emergency_periodic_zone_reminder.yaml) |
 
 ---
 
@@ -648,6 +665,8 @@ automation:
 
 When you're not just *near* an emergency, but actually **inside** the warning zone, that's a fundamentally different situation requiring different responses. The integration detects when your location is inside emergency polygon boundaries.
 
+> **Important:** For comprehensive containment documentation, blueprints, and safety automations, see the **[Containment Safety Guide](containment-safety.md)**.
+
 > **Note:** Containment detection is only available for Zone and Person modes, not State mode.
 
 ### Critical Alert: Inside Emergency Warning Zone
@@ -1160,6 +1179,7 @@ The `abc_emergency_containment_severity_changed` event includes all standard fie
 
 ## Next Steps
 
+- [Containment Safety Guide](containment-safety.md) - **Critical:** In-depth containment detection and safety automations
 - [Notifications Guide](notifications.md) - Detailed notification setup
 - [Scripts Guide](scripts.md) - Emergency scripts and sequences
 - [Entities Reference](entities.md) - Complete entity documentation

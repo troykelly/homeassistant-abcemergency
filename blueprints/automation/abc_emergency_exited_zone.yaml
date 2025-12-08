@@ -1,0 +1,42 @@
+blueprint:
+  name: ABC Emergency - Exited Zone Alert
+  description: >
+    Send a notification when you leave an emergency polygon zone.
+    This provides peace of mind that you've moved out of the affected area.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_exited_zone.yaml
+  input:
+    instance_filter:
+      name: Instance Name Filter (Optional)
+      description: >
+        Only trigger for events from this instance name (e.g., "ABC Emergency (Home)").
+        Leave empty to trigger for all instances.
+      default: ""
+      selector:
+        text:
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+
+trigger:
+  - platform: event
+    event_type: abc_emergency_exited_polygon
+
+condition:
+  - condition: template
+    value_template: >
+      {% set filter = '!input instance_filter' %}
+      {{ filter == '' or trigger.event.data.instance_name == filter }}
+
+action:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "Left Emergency Zone"
+    message: >
+      You have left: {{ trigger.event.data.headline }}
+      Stay vigilant and continue to monitor conditions.

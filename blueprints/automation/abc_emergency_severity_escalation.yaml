@@ -1,0 +1,80 @@
+blueprint:
+  name: ABC Emergency - Severity Escalation Alert
+  description: >
+    Critical alert when an emergency escalates while you're inside its polygon.
+    For example, when an Advice level warning becomes Watch and Act, or
+    Watch and Act escalates to Emergency Warning. This is a life-safety feature.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_severity_escalation.yaml
+  input:
+    instance_filter:
+      name: Instance Name Filter (Optional)
+      description: >
+        Only trigger for events from this instance name (e.g., "ABC Emergency (Home)").
+        Leave empty to trigger for all instances.
+      default: ""
+      selector:
+        text:
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    enable_critical_alert:
+      name: Enable Critical Alert
+      description: Use critical priority (bypass DND) for escalation alerts
+      default: true
+      selector:
+        boolean:
+    notify_deescalation:
+      name: Also Notify on De-escalation
+      description: Send a notification when alerts are reduced (good news)
+      default: true
+      selector:
+        boolean:
+
+trigger:
+  - platform: event
+    event_type: abc_emergency_containment_severity_changed
+
+condition:
+  - condition: template
+    value_template: >
+      {% set filter = '!input instance_filter' %}
+      {{ filter == '' or trigger.event.data.instance_name == filter }}
+
+action:
+  - choose:
+      # Escalation - more serious
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.event.data.escalated == true }}"
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "ALERT LEVEL INCREASED"
+            message: >
+              {{ trigger.event.data.headline }} has ESCALATED!
+              {{ trigger.event.data.previous_alert_text }} to {{ trigger.event.data.new_alert_text }}
+              TAKE ACTION NOW!
+            data:
+              priority: "{{ 'critical' if !input enable_critical_alert else 'high' }}"
+              ttl: 0
+              channel: alarm_stream
+
+      # De-escalation - good news (if enabled)
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.event.data.escalated == false and !input notify_deescalation }}"
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            title: "Alert Level Reduced"
+            message: >
+              {{ trigger.event.data.headline }} has de-escalated from
+              {{ trigger.event.data.previous_alert_text }} to {{ trigger.event.data.new_alert_text }}.
+              Continue to monitor conditions.

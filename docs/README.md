@@ -24,6 +24,7 @@ Welcome to the ABC Emergency for Home Assistant documentation.
 |-------|-------------|
 | [Entities Reference](entities.md) | Complete list of sensors and their attributes |
 | [Automations](automations.md) | Ready-to-use automation examples and blueprints |
+| [Containment Safety Guide](containment-safety.md) | **Critical:** Alerts when you're inside emergency zones |
 | [Notifications](notifications.md) | Mobile alerts, critical notifications, TTS |
 | [Scripts](scripts.md) | Emergency briefings and scripts |
 | [Dashboard Maps](dashboard-maps.md) | Map card configuration |
@@ -77,7 +78,14 @@ Zone and Person modes can detect when you're not just *near* an emergency, but a
 | **Proximity** | Within X km of incident | "Bushfire 15km away" |
 | **Containment** | Inside polygon boundary | "You are INSIDE the bushfire warning zone" |
 
-See [Entities Reference](entities.md#containment-binary-sensors-zoneperson-mode-only) and [Containment Automations](automations.md#containment-based-automations) for details.
+**This is a life-safety feature.** Being inside an emergency zone is fundamentally different from being nearby.
+
+See the **[Containment Safety Guide](containment-safety.md)** for comprehensive documentation, blueprints, and automations.
+
+Quick links:
+- [Containment Binary Sensors](entities.md#containment-binary-sensors-zoneperson-mode-only)
+- [Containment Events](entities.md#containment-events)
+- [Containment Automations](automations.md#containment-based-automations)
 
 ---
 

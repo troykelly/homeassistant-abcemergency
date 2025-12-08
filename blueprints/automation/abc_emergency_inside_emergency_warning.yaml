@@ -1,0 +1,117 @@
+blueprint:
+  name: ABC Emergency - Inside Emergency Warning Zone
+  description: >
+    Maximum urgency alert when you are physically inside an Emergency Warning
+    (red level) zone. This is the most critical safety automation - it means
+    you may be in immediate danger and need to act NOW.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_inside_emergency_warning.yaml
+  input:
+    inside_emergency_warning_sensor:
+      name: Inside Emergency Warning Sensor
+      description: >
+        The containment binary sensor for Emergency Warning level
+        (e.g., binary_sensor.abc_emergency_home_inside_emergency_warning)
+      selector:
+        entity:
+          filter:
+            - integration: abcemergency
+              domain: binary_sensor
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send critical notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    flash_lights:
+      name: Flash Lights Red
+      description: Flash specified lights red when entering zone
+      default: false
+      selector:
+        boolean:
+    light_entity:
+      name: Light to Flash (Optional)
+      description: The light entity to flash red (if enabled above)
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: light
+    tts_entity:
+      name: TTS Speaker (Optional)
+      description: Speaker for voice announcement (leave empty to skip)
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+
+trigger:
+  - platform: state
+    entity_id: !input inside_emergency_warning_sensor
+    to: "on"
+
+action:
+  # Critical notification
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "EVACUATE NOW"
+    message: >
+      You are INSIDE an Emergency Warning zone!
+      {% set sensor = '!input inside_emergency_warning_sensor' %}
+      {% set incidents = state_attr(sensor, 'incidents') %}
+      {{ incidents[0].headline if incidents else 'Check ABC Emergency for details' }}
+    data:
+      priority: critical
+      ttl: 0
+      channel: alarm_stream
+      push:
+        sound:
+          name: default
+          critical: 1
+          volume: 1.0
+
+  # Flash lights if enabled
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ !input flash_lights }}"
+        sequence:
+          - repeat:
+              count: 5
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: !input light_entity
+                  data:
+                    color_name: red
+                    brightness: 255
+                - delay:
+                    milliseconds: 500
+                - service: light.turn_off
+                  target:
+                    entity_id: !input light_entity
+                - delay:
+                    milliseconds: 500
+          - service: light.turn_on
+            target:
+              entity_id: !input light_entity
+            data:
+              color_name: red
+              brightness: 200
+
+  # TTS announcement if speaker configured
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ !input tts_entity != {} }}"
+        sequence:
+          - service: tts.google_translate_say
+            target:
+              entity_id: !input tts_entity
+            data:
+              message: >
+                Attention! Attention! You are inside an Emergency Warning zone.
+                Take action immediately. This is not a drill.

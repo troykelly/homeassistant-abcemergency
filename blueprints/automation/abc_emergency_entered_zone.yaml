@@ -1,0 +1,69 @@
+blueprint:
+  name: ABC Emergency - Entered Zone Alert
+  description: >
+    Send a notification when you enter any emergency polygon zone.
+    This uses point-in-polygon detection to know when you're actually
+    inside an emergency boundary, not just nearby.
+  domain: automation
+  source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_entered_zone.yaml
+  input:
+    instance_filter:
+      name: Instance Name Filter (Optional)
+      description: >
+        Only trigger for events from this instance name (e.g., "ABC Emergency (Home)").
+        Leave empty to trigger for all instances.
+      default: ""
+      selector:
+        text:
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    enable_critical_for_emergency:
+      name: Critical Alert for Emergency Warning
+      description: Use critical priority (bypass DND) when entering Emergency Warning zones
+      default: true
+      selector:
+        boolean:
+
+trigger:
+  - platform: event
+    event_type: abc_emergency_entered_polygon
+
+condition:
+  - condition: template
+    value_template: >
+      {% set filter = '!input instance_filter' %}
+      {{ filter == '' or trigger.event.data.instance_name == filter }}
+
+action:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: >
+      {% if trigger.event.data.alert_level == 'extreme' %}
+      ENTERED EMERGENCY ZONE
+      {% elif trigger.event.data.alert_level == 'severe' %}
+      Entered Watch and Act Zone
+      {% else %}
+      Entered Emergency Zone
+      {% endif %}
+    message: >
+      You are now inside: {{ trigger.event.data.headline }}
+      Alert Level: {{ trigger.event.data.alert_text }}
+      Type: {{ trigger.event.data.event_type }}
+    data:
+      priority: >
+        {% if trigger.event.data.alert_level == 'extreme' and !input enable_critical_for_emergency %}
+        critical
+        {% elif trigger.event.data.alert_level in ['extreme', 'severe'] %}
+        high
+        {% else %}
+        normal
+        {% endif %}
+      ttl: 0
+      channel: >
+        {% if trigger.event.data.alert_level == 'extreme' %}alarm_stream{% else %}alerts{% endif %}

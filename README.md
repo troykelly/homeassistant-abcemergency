@@ -160,6 +160,7 @@ automation:
 | [Configuration](docs/configuration.md) | All configuration options explained |
 | [Entities Reference](docs/entities.md) | Complete list of sensors and their attributes |
 | [Automations](docs/automations.md) | Ready-to-use automation examples |
+| [**Containment Safety Guide**](docs/containment-safety.md) | **Critical:** Alerts when inside emergency zones |
 | [Events](docs/automations.md#event-based-automations) | Event-based per-incident alerting |
 | [Notifications](docs/notifications.md) | Mobile alerts, critical notifications, TTS |
 | [Scripts](docs/scripts.md) | Emergency briefings, evacuation checklists |

@@ -1333,6 +1333,45 @@ class TestStorageCleanup:
         assert "AUREMER-old2" not in coordinator._seen_incident_ids
         assert "AUREMER-recent1" in coordinator._seen_incident_ids
 
+    async def test_cleanup_handles_timezone_naive_timestamps(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test cleanup properly handles timezone-naive timestamps."""
+        from datetime import timedelta
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        # Set up storage with timezone-naive timestamp (simulating legacy data)
+        now = datetime.now(UTC)
+        # Create timezone-naive ISO string (no +00:00 suffix)
+        naive_old = (now - timedelta(days=31)).replace(tzinfo=None).isoformat()
+        naive_recent = (now - timedelta(days=5)).replace(tzinfo=None).isoformat()
+
+        with patch.object(coordinator, "_store") as mock_store:
+            mock_store.async_load = AsyncMock(
+                return_value={
+                    "seen_incidents": {
+                        "AUREMER-naive-old": naive_old,
+                        "AUREMER-naive-recent": naive_recent,
+                    }
+                }
+            )
+            mock_store.async_save = AsyncMock()
+            await coordinator.async_load_seen_incidents()
+
+        # Old (naive timezone) should be cleaned up, recent kept
+        assert "AUREMER-naive-old" not in coordinator._seen_incident_ids
+        assert "AUREMER-naive-recent" in coordinator._seen_incident_ids
+
     async def test_migrate_v1_to_v2_format(
         self,
         hass: HomeAssistant,

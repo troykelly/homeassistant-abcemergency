@@ -526,6 +526,102 @@ class TestPointInIncident:
         assert point_in_incident(2.0, 2.0, incident) is True
 
 
+class TestExceptionHandling:
+    """Test exception handling in polygon operations."""
+
+    def test_build_prepared_polygons_handles_exception(self) -> None:
+        """Exception during polygon preparation skips that polygon."""
+        from unittest.mock import patch
+
+        from custom_components.abcemergency.helpers_geo import _build_prepared_polygons
+
+        polygon: StoredPolygon = {
+            "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+            "inner_rings": None,
+        }
+
+        # Mock stored_polygon_to_shapely to raise an exception
+        with patch(
+            "custom_components.abcemergency.helpers_geo.stored_polygon_to_shapely",
+            side_effect=Exception("Test error"),
+        ):
+            result = _build_prepared_polygons([polygon])
+            assert result == []  # Malformed polygon skipped
+
+    def test_point_in_incident_returns_false_when_all_polygons_invalid(self) -> None:
+        """point_in_incident returns False when all polygons fail preparation."""
+        incident = EmergencyIncident(
+            id="test-invalid",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                # Self-intersecting (invalid) polygon
+                {
+                    "outer_ring": [
+                        [0.0, 0.0],
+                        [10.0, 10.0],
+                        [10.0, 0.0],
+                        [0.0, 10.0],
+                        [0.0, 0.0],
+                    ],
+                    "inner_rings": None,
+                }
+            ],
+            has_polygon=True,
+        )
+
+        # All polygons are invalid, so should return False
+        result = point_in_incident(5.0, 5.0, incident)
+        assert result is False
+        # Cache should be empty list
+        assert incident._prepared_polygons == []
+
+    def test_point_in_incident_handles_prepared_contains_exception(self) -> None:
+        """Exception during prepared.contains() is handled gracefully."""
+        from unittest.mock import MagicMock
+
+        incident = EmergencyIncident(
+            id="test-exception",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                {
+                    "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+                    "inner_rings": None,
+                }
+            ],
+            has_polygon=True,
+        )
+
+        # Build the cache first
+        get_prepared_polygons(incident)
+
+        # Mock the prepared geometry to raise an exception on contains()
+        mock_prepared = MagicMock()
+        mock_prepared.contains.side_effect = Exception("Test error")
+        incident._prepared_polygons = [mock_prepared]
+
+        # Should handle exception gracefully and return False
+        result = point_in_incident(5.0, 5.0, incident)
+        assert result is False
+
+
 class TestRealWorldCoordinates:
     """Test with realistic Australian coordinates."""
 

@@ -644,6 +644,200 @@ automation:
 
 ---
 
+## Containment-Based Automations
+
+When you're not just *near* an emergency, but actually **inside** the warning zone, that's a fundamentally different situation requiring different responses. The integration detects when your location is inside emergency polygon boundaries.
+
+> **Note:** Containment detection is only available for Zone and Person modes, not State mode.
+
+### Critical Alert: Inside Emergency Warning Zone
+
+This automation fires when you are **inside** an Emergency Warning polygon - the most serious situation requiring immediate action.
+
+```yaml
+automation:
+  - id: abc_emergency_inside_emergency_warning
+    alias: "INSIDE Emergency Warning - Evacuate Now"
+    description: >
+      Maximum urgency alert when physically inside an Emergency Warning zone.
+      This is different from being nearby - you are directly affected.
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.abc_emergency_home_inside_emergency_warning
+        to: "on"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "EVACUATE NOW"
+          message: >
+            You are INSIDE an Emergency Warning zone!
+            {{ state_attr('binary_sensor.abc_emergency_home_inside_emergency_warning', 'incidents')[0].headline }}
+          data:
+            priority: critical
+            ttl: 0
+            channel: alarm_stream
+            push:
+              sound:
+                name: default
+                critical: 1
+                volume: 1.0
+```
+
+### Entered/Exited Polygon Events
+
+Use event-based triggers for more precise control over when you enter or exit zones:
+
+```yaml
+automation:
+  - id: abc_emergency_entered_polygon
+    alias: "Entered Emergency Zone"
+    description: "Alert when entering any emergency polygon"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_entered_polygon
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Entered {{ trigger.event.data.alert_text }} Zone"
+          message: >
+            You have entered: {{ trigger.event.data.headline }}
+            Type: {{ trigger.event.data.event_type }}
+          data:
+            priority: >
+              {% if trigger.event.data.alert_level == 'extreme' %}critical
+              {% elif trigger.event.data.alert_level == 'severe' %}high
+              {% else %}normal{% endif %}
+
+  - id: abc_emergency_exited_polygon
+    alias: "Exited Emergency Zone"
+    description: "Notify when leaving an emergency zone"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_exited_polygon
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Left Emergency Zone"
+          message: >
+            You have left: {{ trigger.event.data.headline }}
+```
+
+### Filter Entered Events by Alert Level
+
+Only trigger for specific warning levels:
+
+```yaml
+automation:
+  - id: abc_emergency_entered_watch_and_act
+    alias: "Entered Watch and Act Zone"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_entered_polygon
+        event_data:
+          alert_level: "severe"  # Watch and Act
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Entered Watch and Act Zone"
+          message: >
+            You have entered a Watch and Act zone!
+            {{ trigger.event.data.headline }}
+            Take action now to prepare for changing conditions.
+```
+
+### Comparing Proximity vs Containment
+
+Different alerts for nearby incidents vs being inside the zone:
+
+```yaml
+automation:
+  # Alert when nearby (within radius)
+  - id: abc_emergency_bushfire_nearby
+    alias: "Bushfire Nearby"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.abc_emergency_home_nearest_incident
+        below: 20
+    condition:
+      - condition: template
+        value_template: >
+          {{ state_attr('sensor.abc_emergency_home_nearest_incident', 'event_type') == 'Bushfire' }}
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Bushfire Nearby"
+          message: "Bushfire {{ states('sensor.abc_emergency_home_nearest_incident') }}km away"
+          data:
+            priority: high
+
+  # Alert when INSIDE (much more serious)
+  - id: abc_emergency_inside_bushfire_zone
+    alias: "Inside Bushfire Zone"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.abc_emergency_home_inside_polygon
+        to: "on"
+    condition:
+      - condition: template
+        value_template: >
+          {{ state_attr('binary_sensor.abc_emergency_home_inside_polygon', 'incidents')
+             | selectattr('event_type', 'eq', 'Bushfire') | list | length > 0 }}
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "INSIDE BUSHFIRE ZONE"
+          message: "You are INSIDE a bushfire warning zone! Act immediately!"
+          data:
+            priority: critical
+            channel: alarm_stream
+```
+
+### Family Member Inside Emergency Zone
+
+Monitor when a tracked family member enters an emergency zone:
+
+```yaml
+automation:
+  - id: abc_emergency_family_member_inside_zone
+    alias: "Family Member Inside Emergency Zone"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.abc_emergency_dad_inside_polygon
+        to: "on"
+    action:
+      - service: notify.family_group
+        data:
+          title: "Dad is inside an emergency zone!"
+          message: >
+            {% set incidents = state_attr('binary_sensor.abc_emergency_dad_inside_polygon', 'incidents') %}
+            {{ incidents[0].headline if incidents else 'Unknown incident' }}
+            Alert level: {{ state_attr('binary_sensor.abc_emergency_dad_inside_polygon', 'highest_alert_level') }}
+```
+
+### Periodic Reminder While Inside Zone
+
+The `abc_emergency_inside_polygon` event fires on each update while inside a zone. Use it for periodic reminders:
+
+```yaml
+automation:
+  - id: abc_emergency_periodic_inside_reminder
+    alias: "Periodic Reminder While Inside Zone"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_inside_polygon
+        event_data:
+          alert_level: "extreme"  # Only for Emergency Warning
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "STILL INSIDE EMERGENCY ZONE"
+          message: >
+            Reminder: You are still inside {{ trigger.event.data.headline }}
+            Alert level: {{ trigger.event.data.alert_text }}
+```
+
+---
+
 ## Event-Based Automations
 
 The integration fires Home Assistant events when **new incidents** are detected. This enables real-time alerting for each individual incident as it appears, rather than relying on sensor state changes.
@@ -815,8 +1009,11 @@ automation:
 | `abc_emergency_new_extreme_heat` | Fired for new extreme heat incidents |
 | `abc_emergency_new_cyclone` | Fired for new cyclone incidents |
 | `abc_emergency_new_earthquake` | Fired for new earthquake incidents |
+| `abc_emergency_entered_polygon` | Fired when entering an emergency polygon (Zone/Person mode) |
+| `abc_emergency_exited_polygon` | Fired when exiting an emergency polygon (Zone/Person mode) |
+| `abc_emergency_inside_polygon` | Fired each update while inside a polygon (Zone/Person mode) |
 
-> **Note:** Type-specific events use a slugified version of the incident type (lowercase, spaces replaced with underscores).
+> **Note:** Type-specific events use a slugified version of the incident type (lowercase, spaces replaced with underscores). Containment events (entered/exited/inside_polygon) are only fired for Zone and Person modes, not State mode.
 
 #### Event Data Fields
 

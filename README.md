@@ -89,6 +89,15 @@ This integration uses the official [Australian Warning System](https://www.austr
 - **Binary sensors** - Simple on/off triggers for each warning level
 - **Geo-location entities** - See all incidents on your Home Assistant map
 
+### Point-in-Polygon Containment Detection
+
+Know when you're not just *near* an emergency, but **inside** the actual warning zone:
+
+- **Containment vs Proximity** - Being inside an emergency zone is fundamentally different from being nearby
+- **Polygon boundary detection** - Uses actual emergency polygon boundaries, not just distance
+- **Enter/exit events** - Get notified when you enter or leave an emergency zone
+- **Per-alert-level containment** - Know if you're inside an Emergency Warning, Watch and Act, or Advice zone
+
 ---
 
 ## Quick Start
@@ -287,6 +296,15 @@ Each instance creates a device with these entities:
 | `binary_sensor.abc_emergency_*_emergency_warning` | Red level (highest) |
 | `binary_sensor.abc_emergency_*_watch_and_act` | Orange level or higher |
 | `binary_sensor.abc_emergency_*_advice` | Yellow level or higher |
+
+### Containment Binary Sensors (Zone/Person Mode)
+
+| Entity | ON When |
+|--------|---------|
+| `binary_sensor.abc_emergency_*_inside_polygon` | Inside ANY emergency polygon |
+| `binary_sensor.abc_emergency_*_inside_emergency_warning` | Inside Emergency Warning (red) polygon |
+| `binary_sensor.abc_emergency_*_inside_watch_and_act` | Inside Watch and Act (orange+) polygon |
+| `binary_sensor.abc_emergency_*_inside_advice` | Inside Advice (yellow+) polygon |
 
 ---
 

@@ -90,6 +90,8 @@ Each incident in the `incidents` list contains:
 - `event_type` (string): Type of incident (Bushfire, Flood, Storm, etc.)
 - `distance_km` (float\|null): Distance from monitored location in km
 - `direction` (string\|null): Compass direction (N, NE, E, etc.)
+- `contains_point` (bool): True if your location is inside this incident's polygon
+- `has_polygon` (bool): True if this incident has polygon boundary data
 
 **Example attributes:**
 ```yaml
@@ -99,12 +101,24 @@ incidents:
     event_type: "Bushfire"
     distance_km: 12.4
     direction: "NW"
+    contains_point: true
+    has_polygon: true
   - headline: "Mount Victoria"
     alert_level: "severe"
     event_type: "Bushfire"
     distance_km: 28.7
     direction: "W"
+    contains_point: false
+    has_polygon: true
 ```
+
+**Additional attributes for Zone/Person modes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `containing_count` | int | Number of incidents whose polygon contains your location |
+| `inside_polygon` | bool | True if inside any incident polygon |
+| `highest_containing_level` | string | Highest alert level of containing incidents |
 
 ---
 
@@ -385,6 +399,158 @@ emergency_warning: ON → watch_and_act: ON → advice: ON → active_alert: ON
 | Advice level | OFF | OFF | ON | ON |
 | Watch and Act | OFF | ON | ON | ON |
 | Emergency Warning | ON | ON | ON | ON |
+
+---
+
+## Containment Binary Sensors (Zone/Person Mode Only)
+
+These sensors indicate when your monitored location is **inside** the actual boundary of an emergency incident polygon. This is different from proximity sensors which only check distance.
+
+> **Important:** Containment sensors are only available for Zone and Person instance types. State mode monitors an entire state, not a specific point, so containment detection doesn't apply.
+
+### inside_polygon
+
+| Property | Value |
+|----------|-------|
+| **Entity ID** | `binary_sensor.abc_emergency_*_inside_polygon` |
+| **Device Class** | `safety` |
+| **On when** | Your location is inside ANY emergency polygon |
+
+**Description:** Indicates whether your monitored location is physically inside the boundary of any emergency incident. This is the most critical indicator - being inside an emergency zone is fundamentally different from being nearby.
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `containing_count` | int | Number of polygons containing your location |
+| `highest_alert_level` | string | Highest alert level of containing incidents |
+| `incidents` | list | Details of each containing incident |
+
+Each incident in the `incidents` list contains:
+- `id` (string): Unique incident identifier
+- `headline` (string): Incident description
+- `alert_level` (string): Warning level
+- `alert_text` (string): Warning text (e.g., "Emergency Warning")
+- `event_type` (string): Type of incident
+
+**Example attributes:**
+```yaml
+containing_count: 2
+highest_alert_level: "extreme"
+incidents:
+  - id: "AUREMER-123456"
+    headline: "Bushfire at Milsons Gully"
+    alert_level: "extreme"
+    alert_text: "Emergency Warning"
+    event_type: "Bushfire"
+  - id: "AUREMER-123457"
+    headline: "Flood Warning"
+    alert_level: "severe"
+    alert_text: "Watch and Act"
+    event_type: "Flood"
+```
+
+---
+
+### inside_emergency_warning
+
+| Property | Value |
+|----------|-------|
+| **Entity ID** | `binary_sensor.abc_emergency_*_inside_emergency_warning` |
+| **Device Class** | `safety` |
+| **On when** | Inside an Emergency Warning (red/extreme) polygon |
+
+**Description:** Indicates you are inside the highest warning level zone - Emergency Warning. This means you may be in immediate danger and should act now.
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `count` | int | Number of Emergency Warning polygons containing you |
+| `incidents` | list | Details of containing Emergency Warning incidents |
+
+---
+
+### inside_watch_and_act
+
+| Property | Value |
+|----------|-------|
+| **Entity ID** | `binary_sensor.abc_emergency_*_inside_watch_and_act` |
+| **Device Class** | `safety` |
+| **On when** | Inside a Watch and Act (orange/severe) OR Emergency Warning polygon |
+
+**Description:** Indicates you are inside a Watch and Act or higher level zone. Conditions are changing and you should prepare to take action.
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `count` | int | Number of Watch and Act (or higher) polygons containing you |
+| `incidents` | list | Details of containing incidents at this level or higher |
+
+---
+
+### inside_advice
+
+| Property | Value |
+|----------|-------|
+| **Entity ID** | `binary_sensor.abc_emergency_*_inside_advice` |
+| **Device Class** | `safety` |
+| **On when** | Inside any warning level polygon (Advice, Watch and Act, or Emergency Warning) |
+
+**Description:** Indicates you are inside any official warning zone. Stay informed about the incident affecting your location.
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `count` | int | Number of warning polygons containing you |
+| `incidents` | list | Details of all containing incidents |
+
+---
+
+## Containment Events
+
+The integration fires events when your containment status changes. These are useful for automation triggers.
+
+### abc_emergency_entered_polygon
+
+Fired when your monitored location **enters** an emergency polygon.
+
+**Event Data:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config_entry_id` | string | Config entry ID |
+| `instance_name` | string | "Home Zone", "Troy", etc. |
+| `instance_type` | string | "zone" or "person" |
+| `incident_id` | string | Unique incident ID |
+| `headline` | string | Incident headline |
+| `event_type` | string | "Bushfire", "Flood", etc. |
+| `alert_level` | string | "extreme", "severe", "moderate", "minor" |
+| `alert_text` | string | "Emergency Warning", "Watch and Act", "Advice" |
+| `monitored_latitude` | float | Your monitored location latitude |
+| `monitored_longitude` | float | Your monitored location longitude |
+| `latitude` | float | Incident centroid latitude |
+| `longitude` | float | Incident centroid longitude |
+
+---
+
+### abc_emergency_exited_polygon
+
+Fired when your monitored location **exits** an emergency polygon.
+
+Same event data structure as `abc_emergency_entered_polygon`.
+
+---
+
+### abc_emergency_inside_polygon
+
+Fired on **each update** while inside a polygon. Useful for periodic reminders.
+
+Same event data structure as `abc_emergency_entered_polygon`.
+
+> **Note:** Events are NOT fired on the first data load to avoid false "entered" events for pre-existing situations. Events only fire on state transitions after the initial load.
 
 ---
 

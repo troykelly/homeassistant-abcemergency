@@ -554,6 +554,58 @@ Same event data structure as `abc_emergency_entered_polygon`.
 
 ---
 
+### abc_emergency_containment_severity_changed
+
+Fired when an emergency's **alert level changes** while you're inside its polygon. This is critical for detecting when an incident escalates (e.g., Advice → Emergency Warning) or de-escalates while you remain inside the affected zone.
+
+**Event Data:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config_entry_id` | string | Config entry ID |
+| `instance_name` | string | "Home Zone", "Troy", etc. |
+| `instance_type` | string | "zone" or "person" |
+| `incident_id` | string | Unique incident ID |
+| `headline` | string | Incident headline |
+| `event_type` | string | "Bushfire", "Flood", etc. |
+| `alert_level` | string | Current alert level ("extreme", "severe", "moderate", "minor") |
+| `alert_text` | string | Current warning text ("Emergency Warning", "Watch and Act", "Advice") |
+| `previous_alert_level` | string | Previous alert level |
+| `previous_alert_text` | string | Previous warning text |
+| `new_alert_level` | string | New alert level (same as `alert_level`) |
+| `new_alert_text` | string | New warning text (same as `alert_text`) |
+| `escalated` | bool | `true` if severity increased, `false` if decreased |
+| `monitored_latitude` | float | Your monitored location latitude |
+| `monitored_longitude` | float | Your monitored location longitude |
+| `latitude` | float | Incident centroid latitude |
+| `longitude` | float | Incident centroid longitude |
+
+**Example automation:**
+
+```yaml
+automation:
+  - alias: "Emergency Escalated While Inside"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_containment_severity_changed
+        event_data:
+          escalated: true
+    action:
+      - service: notify.mobile_app_phone
+        data:
+          title: "⚠️ EMERGENCY ESCALATED"
+          message: >
+            {{ trigger.event.data.headline }} has escalated from
+            {{ trigger.event.data.previous_alert_text }} to
+            {{ trigger.event.data.new_alert_text }}!
+            You are INSIDE this emergency zone.
+          data:
+            priority: critical
+            channel: alarm
+```
+
+---
+
 ## Geo-Location Entities
 
 When enabled, the integration creates geo-location entities for mapping incidents.

@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-12-08
+
+### Added
+
+- **Containment Severity Change Event** - New `abc_emergency_containment_severity_changed` event fires when an emergency's alert level changes while you're inside its polygon
+  - Enables automations to respond to escalation (e.g., Advice → Emergency Warning) or de-escalation
+  - Event includes `previous_alert_level`, `new_alert_level`, and `escalated` boolean flag
+- New automation examples in documentation for severity escalation alerts
+
+### Changed
+
+- **Refactored containment tracking** - Now tracks actual containment state per incident rather than just IDs
+  - Enables detection of polygon boundary changes (expansion/contraction)
+  - Polygon expansion now correctly fires `abc_emergency_entered_polygon`
+  - Polygon contraction now correctly fires `abc_emergency_exited_polygon`
+
+### Fixed
+
+- Containment events now fire correctly when polygon boundaries change without the incident ID changing
+- Exit events now fire when a polygon shrinks to no longer contain your location (even if the incident still exists)
+
 ## [0.4.0] - 2025-12-08
 
 ### Added
@@ -105,12 +126,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.4.1 | 2025-12-08 | Containment severity change event, improved polygon boundary change detection |
 | 0.4.0 | 2025-12-08 | Point-in-polygon containment detection, new containment binary sensors and events |
 | 0.3.0 | 2025-12-07 | Documentation improvements, Blueprints, my.home-assistant.io buttons |
 | 0.2.0 | 2025-12-07 | Instance-based map filtering, new events, enhanced attributes |
 | 0.1.0 | 2025-12-07 | Initial release with all core features |
 
-[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.1.0...v0.2.0

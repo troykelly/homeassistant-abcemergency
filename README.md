@@ -96,6 +96,7 @@ Know when you're not just *near* an emergency, but **inside** the actual warning
 - **Containment vs Proximity** - Being inside an emergency zone is fundamentally different from being nearby
 - **Polygon boundary detection** - Uses actual emergency polygon boundaries, not just distance
 - **Enter/exit events** - Get notified when you enter or leave an emergency zone
+- **Severity change events** - Get alerted when an emergency escalates (e.g., Advice → Emergency Warning) while you're inside
 - **Per-alert-level containment** - Know if you're inside an Emergency Warning, Watch and Act, or Advice zone
 
 ---

@@ -347,3 +347,414 @@ class TestAsyncSetupEntry:
 
         assert len(entities_added) == 4
         assert all(isinstance(e, ABCEmergencyBinarySensor) for e in entities_added)
+
+    async def test_setup_creates_containment_sensors_for_zone_instance(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test that setup creates containment sensors for zone instance."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+        )
+        entry.add_to_hass(hass)
+
+        # Update coordinator instance type for zone mode
+        mock_coordinator.instance_type = INSTANCE_TYPE_ZONE
+
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = mock_coordinator
+
+        entities_added: list = []
+
+        def mock_add_entities(entities: list) -> None:
+            entities_added.extend(entities)
+
+        await async_setup_entry(hass, entry, mock_add_entities)
+
+        # Should have 4 base sensors + 4 containment sensors = 8 total
+        assert len(entities_added) == 8
+
+        # Verify containment sensor keys are present
+        keys = [e.entity_description.key for e in entities_added]
+        assert "inside_polygon" in keys
+        assert "inside_emergency_warning" in keys
+        assert "inside_watch_and_act" in keys
+        assert "inside_advice" in keys
+
+    async def test_setup_does_not_create_containment_sensors_for_state_instance(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test that setup does not create containment sensors for state instance."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_STATE,
+                CONF_STATE: "nsw",
+            },
+            unique_id="abc_emergency_state_nsw",
+        )
+        entry.add_to_hass(hass)
+
+        # Ensure coordinator is state mode
+        mock_coordinator.instance_type = INSTANCE_TYPE_STATE
+
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = mock_coordinator
+
+        entities_added: list = []
+
+        def mock_add_entities(entities: list) -> None:
+            entities_added.extend(entities)
+
+        await async_setup_entry(hass, entry, mock_add_entities)
+
+        # Should have only 4 base sensors (no containment sensors)
+        assert len(entities_added) == 4
+
+        # Verify NO containment sensor keys
+        keys = [e.entity_description.key for e in entities_added]
+        assert "inside_polygon" not in keys
+
+
+class TestContainmentBinarySensorDescriptions:
+    """Test containment binary sensor descriptions."""
+
+    def test_containment_descriptions_exist(self) -> None:
+        """Test that containment sensor descriptions are defined."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        assert len(CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS) == 4
+
+    def test_containment_descriptions_have_required_fields(self) -> None:
+        """Test that containment sensor descriptions have required fields."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        for desc in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS:
+            assert desc.key
+            assert desc.translation_key
+            assert desc.is_on_fn is not None
+            assert desc.device_class == BinarySensorDeviceClass.SAFETY
+            assert desc.attr_fn is not None  # Containment sensors all have attributes
+
+    def test_inside_polygon_description(self) -> None:
+        """Test inside_polygon binary sensor description."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+        assert desc.translation_key == "inside_polygon"
+
+    def test_inside_emergency_warning_description(self) -> None:
+        """Test inside_emergency_warning binary sensor description."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_emergency_warning"
+        )
+        assert desc.translation_key == "inside_emergency_warning"
+
+    def test_inside_watch_and_act_description(self) -> None:
+        """Test inside_watch_and_act binary sensor description."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_watch_and_act"
+        )
+        assert desc.translation_key == "inside_watch_and_act"
+
+    def test_inside_advice_description(self) -> None:
+        """Test inside_advice binary sensor description."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_advice")
+        assert desc.translation_key == "inside_advice"
+
+
+class TestContainmentBinarySensorIsOnFunctions:
+    """Test is_on functions for containment binary sensors."""
+
+    def test_inside_polygon_is_on_when_contained(self) -> None:
+        """Test inside_polygon is on when inside any polygon."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            containing_incidents=[],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+        assert desc.is_on_fn(data) is True
+
+    def test_inside_polygon_is_off_when_not_contained(self) -> None:
+        """Test inside_polygon is off when not inside any polygon."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=False,
+            containing_incidents=[],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+        assert desc.is_on_fn(data) is False
+
+    def test_inside_emergency_warning_is_on_when_inside_extreme(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test inside_emergency_warning is on when inside extreme alert polygon."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            inside_emergency_warning=True,
+            containing_incidents=[mock_incident_bushfire],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_emergency_warning"
+        )
+        assert desc.is_on_fn(data) is True
+
+    def test_inside_emergency_warning_is_off_when_only_severe(
+        self,
+        mock_incident_flood: EmergencyIncident,
+    ) -> None:
+        """Test inside_emergency_warning is off when inside severe-only polygon."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            inside_emergency_warning=False,
+            inside_watch_and_act=True,
+            containing_incidents=[mock_incident_flood],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_emergency_warning"
+        )
+        assert desc.is_on_fn(data) is False
+
+    def test_inside_watch_and_act_is_on_when_inside_severe(
+        self,
+        mock_incident_flood: EmergencyIncident,
+    ) -> None:
+        """Test inside_watch_and_act is on when inside severe or extreme polygon."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            inside_watch_and_act=True,
+            containing_incidents=[mock_incident_flood],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_watch_and_act"
+        )
+        assert desc.is_on_fn(data) is True
+
+    def test_inside_advice_is_on_when_inside_moderate(
+        self,
+        mock_incident_storm: EmergencyIncident,
+    ) -> None:
+        """Test inside_advice is on when inside moderate or higher polygon."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            inside_advice=True,
+            containing_incidents=[mock_incident_storm],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_advice")
+        assert desc.is_on_fn(data) is True
+
+    def test_inside_advice_is_off_when_not_contained(self) -> None:
+        """Test inside_advice is off when not inside any polygon."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=False,
+            inside_advice=False,
+            containing_incidents=[],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_advice")
+        assert desc.is_on_fn(data) is False
+
+
+class TestContainmentBinarySensorAttributes:
+    """Test attribute functions for containment binary sensors."""
+
+    def test_inside_polygon_attributes(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+        mock_incident_flood: EmergencyIncident,
+    ) -> None:
+        """Test inside_polygon returns correct attributes."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            highest_containing_alert_level=AlertLevel.EMERGENCY,
+            containing_incidents=[mock_incident_bushfire, mock_incident_flood],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+        attrs = desc.attr_fn(data)
+
+        assert attrs["containing_count"] == 2
+        assert attrs["highest_alert_level"] == AlertLevel.EMERGENCY
+        assert len(attrs["incidents"]) == 2
+        # Verify incident structure
+        assert attrs["incidents"][0]["id"] == mock_incident_bushfire.id
+        assert attrs["incidents"][0]["headline"] == mock_incident_bushfire.headline
+        assert attrs["incidents"][0]["alert_level"] == mock_incident_bushfire.alert_level
+        assert attrs["incidents"][0]["event_type"] == mock_incident_bushfire.event_type
+
+    def test_inside_emergency_warning_attributes_filters_by_level(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+        mock_incident_flood: EmergencyIncident,
+    ) -> None:
+        """Test inside_emergency_warning attributes only include extreme level."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        # Bushfire is extreme, flood is severe
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            inside_emergency_warning=True,
+            containing_incidents=[mock_incident_bushfire, mock_incident_flood],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_emergency_warning"
+        )
+        attrs = desc.attr_fn(data)
+
+        assert attrs["count"] == 1  # Only the extreme-level incident
+        assert len(attrs["incidents"]) == 1
+        assert attrs["incidents"][0]["id"] == mock_incident_bushfire.id
+
+    def test_inside_watch_and_act_attributes_filters_severe_and_above(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+        mock_incident_flood: EmergencyIncident,
+        mock_incident_storm: EmergencyIncident,
+    ) -> None:
+        """Test inside_watch_and_act attributes include severe and extreme."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        # Bushfire is extreme, flood is severe, storm is moderate
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            inside_watch_and_act=True,
+            containing_incidents=[
+                mock_incident_bushfire,
+                mock_incident_flood,
+                mock_incident_storm,
+            ],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_watch_and_act"
+        )
+        attrs = desc.attr_fn(data)
+
+        assert attrs["count"] == 2  # Extreme + severe, not moderate
+        assert len(attrs["incidents"]) == 2
+
+    def test_inside_advice_attributes_filters_moderate_and_above(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+        mock_incident_storm: EmergencyIncident,
+    ) -> None:
+        """Test inside_advice attributes include moderate, severe, and extreme."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        data = CoordinatorData(
+            incidents=[],
+            total_count=0,
+            nearby_count=0,
+            inside_polygon=True,
+            inside_advice=True,
+            containing_incidents=[mock_incident_bushfire, mock_incident_storm],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_advice")
+        attrs = desc.attr_fn(data)
+
+        assert attrs["count"] == 2  # Both extreme and moderate
+        assert len(attrs["incidents"]) == 2

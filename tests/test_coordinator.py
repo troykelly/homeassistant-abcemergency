@@ -267,6 +267,7 @@ class TestCoordinatorInitState:
         )
 
         assert coordinator._instance_type == INSTANCE_TYPE_STATE
+        assert coordinator.instance_type == INSTANCE_TYPE_STATE
         assert coordinator._state == "nsw"
         assert coordinator._latitude is None
         assert coordinator._longitude is None

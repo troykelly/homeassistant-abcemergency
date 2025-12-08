@@ -158,6 +158,15 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             f"{STORAGE_KEY_PREFIX}_{entry.entry_id}",
         )
 
+    @property
+    def instance_type(self) -> Literal["state", "zone", "person"]:
+        """Return the instance type.
+
+        Returns:
+            The instance type (state, zone, or person).
+        """
+        return self._instance_type
+
     def _load_radii(self) -> dict[str, int]:
         """Load radius configuration from entry data/options."""
 

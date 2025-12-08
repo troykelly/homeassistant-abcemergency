@@ -22,7 +22,7 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, INSTANCE_TYPE_STATE, AlertLevel
+from .const import DOMAIN, INSTANCE_TYPE_PERSON, INSTANCE_TYPE_STATE, INSTANCE_TYPE_ZONE, AlertLevel
 from .coordinator import ABCEmergencyCoordinator
 from .entity import ABCEmergencyEntity
 from .models import CoordinatorData
@@ -135,6 +135,99 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[ABCEmergencyBinarySensorEntityDescription, ...
 )
 
 
+def _get_containment_attributes_for_level(
+    data: CoordinatorData,
+    levels: tuple[str, ...],
+) -> dict[str, Any]:
+    """Get containment attributes filtered by alert level(s).
+
+    Args:
+        data: Coordinator data.
+        levels: Tuple of alert levels to include.
+
+    Returns:
+        Dictionary with count and filtered incidents list.
+    """
+    matching = [inc for inc in data.containing_incidents if inc.alert_level in levels]
+    return {
+        "count": len(matching),
+        "incidents": [
+            {
+                "id": inc.id,
+                "headline": inc.headline,
+                "event_type": inc.event_type,
+            }
+            for inc in matching
+        ],
+    }
+
+
+def _get_inside_polygon_attributes(data: CoordinatorData) -> dict[str, Any]:
+    """Get attributes for the inside_polygon sensor.
+
+    Args:
+        data: Coordinator data.
+
+    Returns:
+        Dictionary with containing_count, highest_alert_level, and incidents.
+    """
+    return {
+        "containing_count": len(data.containing_incidents),
+        "highest_alert_level": data.highest_containing_alert_level,
+        "incidents": [
+            {
+                "id": inc.id,
+                "headline": inc.headline,
+                "alert_level": inc.alert_level,
+                "alert_text": inc.alert_text,
+                "event_type": inc.event_type,
+            }
+            for inc in data.containing_incidents
+        ],
+    }
+
+
+# Containment binary sensors - only for zone/person instances
+CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS: tuple[ABCEmergencyBinarySensorEntityDescription, ...] = (
+    ABCEmergencyBinarySensorEntityDescription(
+        key="inside_polygon",
+        translation_key="inside_polygon",
+        device_class=BinarySensorDeviceClass.SAFETY,
+        is_on_fn=lambda data: data.inside_polygon,
+        attr_fn=_get_inside_polygon_attributes,
+        location_only=True,
+    ),
+    ABCEmergencyBinarySensorEntityDescription(
+        key="inside_emergency_warning",
+        translation_key="inside_emergency_warning",
+        device_class=BinarySensorDeviceClass.SAFETY,
+        is_on_fn=lambda data: data.inside_emergency_warning,
+        attr_fn=lambda data: _get_containment_attributes_for_level(data, (AlertLevel.EMERGENCY,)),
+        location_only=True,
+    ),
+    ABCEmergencyBinarySensorEntityDescription(
+        key="inside_watch_and_act",
+        translation_key="inside_watch_and_act",
+        device_class=BinarySensorDeviceClass.SAFETY,
+        is_on_fn=lambda data: data.inside_watch_and_act,
+        attr_fn=lambda data: _get_containment_attributes_for_level(
+            data, (AlertLevel.EMERGENCY, AlertLevel.WATCH_AND_ACT)
+        ),
+        location_only=True,
+    ),
+    ABCEmergencyBinarySensorEntityDescription(
+        key="inside_advice",
+        translation_key="inside_advice",
+        device_class=BinarySensorDeviceClass.SAFETY,
+        is_on_fn=lambda data: data.inside_advice,
+        attr_fn=lambda data: _get_containment_attributes_for_level(
+            data, (AlertLevel.EMERGENCY, AlertLevel.WATCH_AND_ACT, AlertLevel.ADVICE)
+        ),
+        location_only=True,
+    ),
+)
+
+
 class ABCEmergencyBinarySensor(ABCEmergencyEntity, BinarySensorEntity):
     """Binary sensor entity for ABC Emergency."""
 
@@ -184,7 +277,17 @@ async def async_setup_entry(
     """
     coordinator: ABCEmergencyCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    async_add_entities(
+    entities: list[ABCEmergencyBinarySensor] = [
         ABCEmergencyBinarySensor(coordinator, entry, description)
         for description in BINARY_SENSOR_DESCRIPTIONS
-    )
+    ]
+
+    # Add containment sensors only for zone/person instances
+    # State mode doesn't have a monitored point for containment detection
+    if coordinator.instance_type in (INSTANCE_TYPE_ZONE, INSTANCE_TYPE_PERSON):
+        entities.extend(
+            ABCEmergencyBinarySensor(coordinator, entry, description)
+            for description in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS
+        )
+
+    async_add_entities(entities)

@@ -50,6 +50,7 @@ from .const import (
     Geometry,
     GeometryCollectionGeometry,
     PolygonGeometry,
+    StoredPolygon,
     TopLevelMultiPolygonGeometry,
     TopLevelPointGeometry,
     TopLevelPolygonGeometry,
@@ -455,8 +456,10 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         Returns:
             Processed EmergencyIncident or None if coordinates can't be extracted.
         """
-        # Extract coordinates from geometry
-        location = self._extract_location(emergency["geometry"])
+        # Extract coordinates and geometry from raw geometry
+        location, geometry_type, polygons = self._extract_location_and_geometry(
+            emergency["geometry"]
+        )
         if location is None:
             _LOGGER.warning(
                 "Could not extract location for emergency: %s",
@@ -508,6 +511,9 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             distance_km=distance,
             bearing=bearing,
             direction=direction,
+            geometry_type=geometry_type,
+            polygons=polygons,
+            has_polygon=polygons is not None and len(polygons) > 0,
         )
 
     def _extract_location(self, geometry: Geometry) -> Coordinate | None:
@@ -555,6 +561,86 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             )
 
         return None
+
+    def _extract_location_and_geometry(
+        self, geometry: Geometry
+    ) -> tuple[Coordinate | None, str | None, list[StoredPolygon] | None]:
+        """Extract location coordinates AND polygon geometry from geometry.
+
+        Handles various geometry types:
+        - GeometryCollection: Uses first Point geometry for location, extracts polygon
+        - Point: Uses coordinates directly, no polygon
+        - Polygon/MultiPolygon: Calculates centroid, extracts polygon coordinates
+
+        Args:
+            geometry: Geometry object from the API.
+
+        Returns:
+            Tuple of (location, geometry_type, polygons).
+        """
+        geom_type = geometry["type"]
+        location: Coordinate | None = None
+        polygons: list[StoredPolygon] | None = None
+
+        if geom_type == "GeometryCollection":
+            collection = cast(GeometryCollectionGeometry, geometry)
+            geometries = collection["geometries"]
+
+            # First pass: find Point for location
+            for geom in geometries:
+                if geom["type"] == "Point":
+                    coords = geom["coordinates"]
+                    if len(coords) >= 2:
+                        location = Coordinate(latitude=coords[1], longitude=coords[0])
+                    break
+
+            # Second pass: extract Polygon for containment
+            for geom in geometries:
+                if geom["type"] == "Polygon":
+                    poly_geom = cast(PolygonGeometry, geom)
+                    polygons = [self._extract_stored_polygon(poly_geom["coordinates"])]
+                    # If no point found, use polygon centroid for location
+                    if location is None:
+                        location = self._calculate_polygon_centroid_from_polygon(poly_geom)
+                    break
+
+        elif geom_type == "Point":
+            point = cast(TopLevelPointGeometry, geometry)
+            coords = point["coordinates"]
+            if len(coords) >= 2:
+                location = Coordinate(latitude=coords[1], longitude=coords[0])
+            # No polygon for Point geometry
+
+        elif geom_type == "Polygon":
+            poly = cast(TopLevelPolygonGeometry, geometry)
+            polygons = [self._extract_stored_polygon(poly["coordinates"])]
+            location = self._calculate_polygon_centroid(poly)
+
+        elif geom_type == "MultiPolygon":
+            multi = cast(TopLevelMultiPolygonGeometry, geometry)
+            polygons = [
+                self._extract_stored_polygon(poly_coords) for poly_coords in multi["coordinates"]
+            ]
+            location = self._calculate_multipolygon_centroid(multi)
+
+        return (location, geom_type, polygons)
+
+    def _extract_stored_polygon(self, coordinates: list[list[list[float]]]) -> StoredPolygon:
+        """Convert GeoJSON polygon coordinates to StoredPolygon.
+
+        Args:
+            coordinates: GeoJSON polygon coordinates [[outer_ring], [hole1], ...].
+
+        Returns:
+            StoredPolygon with outer_ring and optional inner_rings.
+        """
+        outer_ring = coordinates[0] if coordinates else []
+        inner_rings = coordinates[1:] if len(coordinates) > 1 else None
+
+        return StoredPolygon(
+            outer_ring=outer_ring,
+            inner_rings=inner_rings if inner_rings else None,
+        )
 
     def _calculate_polygon_centroid(self, geometry: TopLevelPolygonGeometry) -> Coordinate | None:
         """Calculate the centroid of a top-level polygon."""

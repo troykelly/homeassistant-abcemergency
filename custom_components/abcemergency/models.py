@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .const import StoredPolygon
 
 
 @dataclass
@@ -42,11 +46,14 @@ class EmergencyIncident:
         status: Current status of the incident (e.g., "Being controlled").
         size: Affected area size (e.g., "100 ha").
         source: Reporting agency (e.g., "NSW Rural Fire Service").
-        location: Geographic coordinates of the incident.
+        location: Geographic coordinates of the incident centroid.
         updated: Last update timestamp.
         distance_km: Distance from monitored location in kilometers.
         bearing: Bearing from monitored location in degrees (0-360).
         direction: Compass direction from monitored location (N, NE, E, etc.).
+        geometry_type: Original geometry type (Point, Polygon, MultiPolygon, GeometryCollection).
+        polygons: List of stored polygons for point-in-polygon testing.
+        has_polygon: Whether this incident has polygon data for containment testing.
     """
 
     id: str
@@ -63,6 +70,9 @@ class EmergencyIncident:
     distance_km: float | None = None
     bearing: float | None = None
     direction: str | None = None
+    geometry_type: str | None = None
+    polygons: list[StoredPolygon] | None = None
+    has_polygon: bool = False
 
 
 @dataclass

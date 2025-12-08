@@ -305,3 +305,96 @@ def mock_coordinator_empty(
     coordinator.data = mock_coordinator_data_empty
     coordinator.last_update_success = True
     return coordinator
+
+
+@pytest.fixture
+def mock_coordinator_data_with_containment() -> CoordinatorData:
+    """Create mock coordinator data with containment information."""
+    # Create incidents with containment data
+    containing_incident = EmergencyIncident(
+        id="AUREMER-CONTAIN-1",
+        headline="Bushfire Inside Zone",
+        alert_level=AlertLevel.EMERGENCY,
+        alert_text="Emergency",
+        event_type="Bushfire",
+        event_icon="fire",
+        status="Going",
+        size="Large",
+        source="NSW RFS",
+        location=Coordinate(latitude=-33.88, longitude=151.19),
+        updated=datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC),
+        distance_km=5.5,
+        bearing=180.0,
+        direction="S",
+        has_polygon=True,
+        contains_point=True,
+    )
+
+    nearby_no_contain = EmergencyIncident(
+        id="AUREMER-NEARBY-1",
+        headline="Storm Nearby",
+        alert_level=AlertLevel.WATCH_AND_ACT,
+        alert_text="Watch and Act",
+        event_type="Storm",
+        event_icon="weather",
+        status="Active",
+        size=None,
+        source="BoM",
+        location=Coordinate(latitude=-33.9, longitude=151.3),
+        updated=datetime(2025, 1, 15, 9, 0, 0, tzinfo=UTC),
+        distance_km=15.0,
+        bearing=90.0,
+        direction="E",
+        has_polygon=True,
+        contains_point=False,
+    )
+
+    point_only_incident = EmergencyIncident(
+        id="AUREMER-POINT-1",
+        headline="Traffic Hazard",
+        alert_level=AlertLevel.ADVICE,
+        alert_text="Advice",
+        event_type="Traffic",
+        event_icon="other",
+        status="Active",
+        size=None,
+        source="NSW Police",
+        location=Coordinate(latitude=-33.85, longitude=151.21),
+        updated=datetime(2025, 1, 15, 8, 0, 0, tzinfo=UTC),
+        distance_km=3.0,
+        bearing=45.0,
+        direction="NE",
+        has_polygon=False,
+        contains_point=False,
+    )
+
+    return CoordinatorData(
+        incidents=[containing_incident, nearby_no_contain, point_only_incident],
+        total_count=3,
+        nearby_count=3,
+        nearest_distance_km=3.0,
+        nearest_incident=point_only_incident,
+        highest_alert_level=AlertLevel.EMERGENCY,
+        incidents_by_type={"Bushfire": 1, "Storm": 1, "Traffic": 1},
+        instance_type=INSTANCE_TYPE_ZONE,
+        location_available=True,
+        current_latitude=-33.8688,
+        current_longitude=151.2093,
+        containing_incidents=[containing_incident],
+        inside_polygon=True,
+        inside_emergency_warning=True,
+        inside_watch_and_act=True,
+        inside_advice=True,
+        highest_containing_alert_level=AlertLevel.EMERGENCY,
+    )
+
+
+@pytest.fixture
+def mock_coordinator_with_containment(
+    mock_coordinator_data_with_containment: CoordinatorData,
+) -> MagicMock:
+    """Create a mock coordinator with containment data."""
+    coordinator = MagicMock()
+    coordinator.data = mock_coordinator_data_with_containment
+    coordinator.last_update_success = True
+    return coordinator

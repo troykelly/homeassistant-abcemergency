@@ -597,11 +597,11 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             # Second pass: extract Polygon for containment
             for geom in geometries:
                 if geom["type"] == "Polygon":
-                    poly_geom = cast(PolygonGeometry, geom)
-                    polygons = [self._extract_stored_polygon(poly_geom["coordinates"])]
+                    # mypy narrows type after the check above, no cast needed
+                    polygons = [self._extract_stored_polygon(geom["coordinates"])]
                     # If no point found, use polygon centroid for location
                     if location is None:
-                        location = self._calculate_polygon_centroid_from_polygon(poly_geom)
+                        location = self._calculate_polygon_centroid_from_polygon(geom)
                     break
 
         elif geom_type == "Point":

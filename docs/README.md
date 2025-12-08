@@ -68,6 +68,19 @@ ABC Emergency supports three ways to monitor emergencies:
 
 ---
 
+## Point-in-Polygon Containment Detection
+
+Zone and Person modes can detect when you're not just *near* an emergency, but actually **inside** the warning zone boundary:
+
+| Type | Meaning | Example |
+|------|---------|---------|
+| **Proximity** | Within X km of incident | "Bushfire 15km away" |
+| **Containment** | Inside polygon boundary | "You are INSIDE the bushfire warning zone" |
+
+See [Entities Reference](entities.md#containment-binary-sensors-zoneperson-mode-only) and [Containment Automations](automations.md#containment-based-automations) for details.
+
+---
+
 ## Australian Warning System
 
 This integration uses the official [Australian Warning System](https://www.australianwarningsystem.com.au/) levels:

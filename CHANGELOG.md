@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Point-in-Polygon Containment Detection** - Detect when your monitored location is inside an emergency polygon boundary, not just nearby
+- New binary sensors (Zone/Person modes only):
+  - `binary_sensor.abc_emergency_*_inside_polygon` - Inside any emergency polygon
+  - `binary_sensor.abc_emergency_*_inside_emergency_warning` - Inside Emergency Warning (red) polygon
+  - `binary_sensor.abc_emergency_*_inside_watch_and_act` - Inside Watch and Act (orange+) polygon
+  - `binary_sensor.abc_emergency_*_inside_advice` - Inside Advice (yellow+) polygon
+- New events (Zone/Person modes only):
+  - `abc_emergency_entered_polygon` - Fired when entering a polygon
+  - `abc_emergency_exited_polygon` - Fired when exiting a polygon
+  - `abc_emergency_inside_polygon` - Fired each update while inside
+- New sensor attributes:
+  - `contains_point` - Whether incident polygon contains your location
+  - `has_polygon` - Whether incident has polygon geometry data
+  - `containing_count` - Number of polygons containing your location
+  - `inside_polygon` - Quick boolean flag for template use
+  - `highest_containing_level` - Highest alert level of containing incidents
+- Added `shapely` dependency for accurate geospatial polygon calculations
+- Comprehensive documentation for containment detection
+
+### Changed
+
+- EmergencyIncident model now stores polygon geometry data
+- Coordinator performs containment checks during each update cycle
+
 ## [0.3.0] - 2025-12-07
 
 ### Added

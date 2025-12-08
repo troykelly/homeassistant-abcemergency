@@ -4,5 +4,6 @@
   "render_readme": true,
   "homeassistant": "2024.1.0",
   "zip_release": true,
-  "filename": "abcemergency.zip"
+  "filename": "abcemergency.zip",
+  "country": "AU"
 }

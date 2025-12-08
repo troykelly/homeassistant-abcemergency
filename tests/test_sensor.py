@@ -136,7 +136,11 @@ class TestGetIncidentsListAttrs:
     ) -> None:
         """Test returns empty incidents list when no incidents."""
         result = _get_incidents_list_attrs(mock_coordinator_data_empty)
-        assert result == {"incidents": []}
+        assert result["incidents"] == []
+        # Zone/person modes have containment summary fields
+        assert "containing_count" in result
+        assert "inside_polygon" in result
+        assert "highest_containing_level" in result
 
     def test_returns_all_incidents_with_standard_fields(
         self,
@@ -200,7 +204,10 @@ class TestGetIncidentsListByTypeAttrs:
     ) -> None:
         """Test returns empty list when event type not present."""
         result = _get_incidents_list_by_type_attrs(mock_coordinator_data, "Cyclone")
-        assert result == {"incidents": []}
+        assert result["incidents"] == []
+        # Zone/person modes have containing_count field
+        assert "containing_count" in result
+        assert result["containing_count"] == 0
 
     def test_returns_only_matching_type(
         self,
@@ -240,7 +247,17 @@ class TestGetIncidentsListByTypeAttrs:
     ) -> None:
         """Test returns empty list when no incidents at all."""
         result = _get_incidents_list_by_type_attrs(mock_coordinator_data_empty, "Bushfire")
-        assert result == {"incidents": []}
+        assert result["incidents"] == []
+        # Zone/person modes have containing_count field
+        assert "containing_count" in result
+
+    def test_state_mode_containing_count_null(
+        self,
+        mock_coordinator_data_state: CoordinatorData,
+    ) -> None:
+        """Test state mode has null containing_count for type filter."""
+        result = _get_incidents_list_by_type_attrs(mock_coordinator_data_state, "Bushfire")
+        assert result["containing_count"] is None
 
 
 class TestSensorValueFunctions:
@@ -575,3 +592,143 @@ class TestAsyncSetupEntry:
         # Zone instances get common (5) + location (2) = 7 sensors
         assert len(entities_added) == 7
         assert all(isinstance(e, ABCEmergencySensor) for e in entities_added)
+
+
+class TestContainmentAttributes:
+    """Test containment attributes in sensor entities."""
+
+    def test_incident_to_dict_includes_contains_point(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test incident dict includes contains_point field."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        assert "incidents" in result
+        for incident in result["incidents"]:
+            assert "contains_point" in incident
+
+    def test_incident_to_dict_includes_has_polygon(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test incident dict includes has_polygon field."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        assert "incidents" in result
+        for incident in result["incidents"]:
+            assert "has_polygon" in incident
+
+    def test_contains_point_true_for_containing_incident(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test contains_point is True for incidents containing the point."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        containing_incident = next(i for i in result["incidents"] if i["id"] == "AUREMER-CONTAIN-1")
+        assert containing_incident["contains_point"] is True
+
+    def test_contains_point_false_for_non_containing_incident(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test contains_point is False for incidents not containing the point."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        nearby_incident = next(i for i in result["incidents"] if i["id"] == "AUREMER-NEARBY-1")
+        assert nearby_incident["contains_point"] is False
+
+    def test_has_polygon_true_for_polygon_incidents(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test has_polygon is True for incidents with polygon data."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        polygon_incident = next(i for i in result["incidents"] if i["id"] == "AUREMER-CONTAIN-1")
+        assert polygon_incident["has_polygon"] is True
+
+    def test_has_polygon_false_for_point_only_incidents(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test has_polygon is False for point-only incidents."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        point_incident = next(i for i in result["incidents"] if i["id"] == "AUREMER-POINT-1")
+        assert point_incident["has_polygon"] is False
+
+    def test_incidents_list_has_containing_count(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test incidents list has containing_count attribute."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        assert "containing_count" in result
+        assert result["containing_count"] == 1
+
+    def test_incidents_list_has_inside_polygon(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test incidents list has inside_polygon attribute."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        assert "inside_polygon" in result
+        assert result["inside_polygon"] is True
+
+    def test_incidents_list_has_highest_containing_level(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test incidents list has highest_containing_level attribute."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_with_containment)
+        assert "highest_containing_level" in result
+        assert result["highest_containing_level"] == AlertLevel.EMERGENCY
+
+    def test_state_mode_containment_attributes_null(
+        self,
+        mock_coordinator_data_state: CoordinatorData,
+    ) -> None:
+        """Test state mode has null containment summary attributes."""
+        result = _get_incidents_list_attrs(mock_coordinator_data_state)
+        # State mode should have None for containment summaries
+        assert result.get("containing_count") is None
+        assert result.get("inside_polygon") is None
+        assert result.get("highest_containing_level") is None
+
+    def test_nearest_incident_includes_contains_point(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test nearest incident attributes includes contains_point."""
+        result = _get_nearest_incident_attrs(mock_coordinator_data_with_containment)
+        assert "contains_point" in result
+
+    def test_nearest_incident_includes_has_polygon(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test nearest incident attributes includes has_polygon."""
+        result = _get_nearest_incident_attrs(mock_coordinator_data_with_containment)
+        assert "has_polygon" in result
+
+    def test_type_filter_includes_containment_info(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test type-filtered incidents list includes containment info."""
+        result = _get_incidents_list_by_type_attrs(
+            mock_coordinator_data_with_containment, "Bushfire"
+        )
+        assert len(result["incidents"]) == 1
+        bushfire = result["incidents"][0]
+        assert "contains_point" in bushfire
+        assert "has_polygon" in bushfire
+        assert bushfire["contains_point"] is True
+        assert bushfire["has_polygon"] is True
+
+    def test_type_filter_includes_containing_count(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+    ) -> None:
+        """Test type-filtered incidents list includes containing_count."""
+        result = _get_incidents_list_by_type_attrs(
+            mock_coordinator_data_with_containment, "Bushfire"
+        )
+        assert "containing_count" in result
+        assert result["containing_count"] == 1  # One containing bushfire

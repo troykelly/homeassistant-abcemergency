@@ -55,6 +55,8 @@ def _get_nearest_incident_attrs(data: CoordinatorData) -> dict[str, Any]:
         "alert_level": data.nearest_incident.alert_level,
         "event_type": data.nearest_incident.event_type,
         "direction": data.nearest_incident.direction,
+        "contains_point": data.nearest_incident.contains_point,
+        "has_polygon": data.nearest_incident.has_polygon,
     }
 
 
@@ -65,7 +67,8 @@ def _incident_to_dict(incident: EmergencyIncident) -> dict[str, Any]:
         incident: The emergency incident to convert.
 
     Returns:
-        Dictionary containing id, headline, alert_level, event_type, distance_km, direction.
+        Dictionary containing id, headline, alert_level, event_type, distance_km,
+        direction, contains_point, and has_polygon.
     """
     return {
         "id": incident.id,
@@ -74,6 +77,8 @@ def _incident_to_dict(incident: EmergencyIncident) -> dict[str, Any]:
         "event_type": incident.event_type,
         "distance_km": incident.distance_km,
         "direction": incident.direction,
+        "contains_point": incident.contains_point,
+        "has_polygon": incident.has_polygon,
     }
 
 
@@ -84,11 +89,25 @@ def _get_incidents_list_attrs(data: CoordinatorData) -> dict[str, Any]:
         data: Coordinator data containing incidents.
 
     Returns:
-        Dictionary with 'incidents' key containing list of incident details.
+        Dictionary with 'incidents' key containing list of incident details,
+        plus containment summary fields for zone/person modes.
     """
-    if not data.incidents:
-        return {"incidents": []}
-    return {"incidents": [_incident_to_dict(i) for i in data.incidents]}
+    result: dict[str, Any] = {
+        "incidents": [_incident_to_dict(i) for i in data.incidents] if data.incidents else []
+    }
+
+    # Add containment summary for zone/person modes (not state mode)
+    if data.instance_type != INSTANCE_TYPE_STATE:
+        result["containing_count"] = len(data.containing_incidents)
+        result["inside_polygon"] = data.inside_polygon
+        result["highest_containing_level"] = data.highest_containing_alert_level or None
+    else:
+        # State mode has no containment info
+        result["containing_count"] = None
+        result["inside_polygon"] = None
+        result["highest_containing_level"] = None
+
+    return result
 
 
 def _get_incidents_list_by_type_attrs(data: CoordinatorData, event_type: str) -> dict[str, Any]:
@@ -99,12 +118,21 @@ def _get_incidents_list_by_type_attrs(data: CoordinatorData, event_type: str) ->
         event_type: The event type to filter by (e.g., "Bushfire", "Flood", "Storm").
 
     Returns:
-        Dictionary with 'incidents' key containing list of matching incident details.
+        Dictionary with 'incidents' key containing list of matching incident details,
+        plus containing_count for zone/person modes.
     """
-    if not data.incidents:
-        return {"incidents": []}
-    matching = [i for i in data.incidents if i.event_type == event_type]
-    return {"incidents": [_incident_to_dict(i) for i in matching]}
+    matching = [i for i in data.incidents if i.event_type == event_type] if data.incidents else []
+    containing = [i for i in matching if i.contains_point]
+
+    result: dict[str, Any] = {"incidents": [_incident_to_dict(i) for i in matching]}
+
+    # Add containing_count for zone/person modes
+    if data.instance_type != INSTANCE_TYPE_STATE:
+        result["containing_count"] = len(containing)
+    else:
+        result["containing_count"] = None
+
+    return result
 
 
 # Sensors for all instance types

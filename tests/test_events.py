@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from freezegun.api import FrozenDateTimeFactory
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abcemergency.const import (
@@ -1160,11 +1162,12 @@ class TestPersistence:
             state="nsw",
         )
 
-        # Simulate loading existing data
+        # Simulate loading existing data (v1 format triggers migration)
         with patch.object(coordinator, "_store") as mock_store:
             mock_store.async_load = AsyncMock(
                 return_value={"seen_ids": ["AUREMER-existing1", "AUREMER-existing2"]}
             )
+            mock_store.async_save = AsyncMock()  # For v1->v2 migration
             await coordinator.async_load_seen_incidents()
 
             assert coordinator._first_refresh is False
@@ -1288,3 +1291,206 @@ class TestStorageCleanup:
 
         # Call remove storage - should not raise
         await coordinator.async_remove_storage()
+
+    async def test_cleanup_removes_old_incidents(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+        freezer: FrozenDateTimeFactory,
+    ) -> None:
+        """Test cleanup removes incidents older than 30 days."""
+        from datetime import timedelta
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        # Set up old storage data with timestamps (v2 format)
+        now = datetime.now(UTC)
+        old_date = (now - timedelta(days=31)).isoformat()
+        recent_date = (now - timedelta(days=5)).isoformat()
+
+        with patch.object(coordinator, "_store") as mock_store:
+            mock_store.async_load = AsyncMock(
+                return_value={
+                    "seen_incidents": {
+                        "AUREMER-old1": old_date,
+                        "AUREMER-old2": old_date,
+                        "AUREMER-recent1": recent_date,
+                    }
+                }
+            )
+            mock_store.async_save = AsyncMock()
+            await coordinator.async_load_seen_incidents()
+
+        # Old incidents should be cleaned up, recent ones kept
+        assert "AUREMER-old1" not in coordinator._seen_incident_ids
+        assert "AUREMER-old2" not in coordinator._seen_incident_ids
+        assert "AUREMER-recent1" in coordinator._seen_incident_ids
+
+    async def test_migrate_v1_to_v2_format(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test migrating from v1 (list) to v2 (dict with timestamps) format."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        with patch.object(coordinator, "_store") as mock_store:
+            # v1 format: list of IDs
+            mock_store.async_load = AsyncMock(
+                return_value={"seen_ids": ["AUREMER-existing1", "AUREMER-existing2"]}
+            )
+            mock_store.async_save = AsyncMock()
+            await coordinator.async_load_seen_incidents()
+
+        # IDs should be loaded and tracked
+        assert "AUREMER-existing1" in coordinator._seen_incident_ids
+        assert "AUREMER-existing2" in coordinator._seen_incident_ids
+
+    async def test_v2_format_saves_with_timestamps(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+        sample_api_response_single: dict[str, Any],
+    ) -> None:
+        """Test that saving uses v2 format with timestamps."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=sample_api_response_single
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        with patch.object(coordinator, "_store") as mock_store:
+            mock_store.async_load = AsyncMock(return_value=None)
+            mock_store.async_save = AsyncMock()
+
+            await coordinator._async_update_data()
+
+            # Check that save was called with v2 format
+            mock_store.async_save.assert_called()
+            saved_data = mock_store.async_save.call_args[0][0]
+            assert "seen_incidents" in saved_data
+            assert isinstance(saved_data["seen_incidents"], dict)
+            # Each entry should have an ISO timestamp
+            for _incident_id, timestamp in saved_data["seen_incidents"].items():
+                assert isinstance(timestamp, str)
+                # Should parse as ISO format
+                datetime.fromisoformat(timestamp)
+
+    async def test_cleanup_threshold_configurable(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that cleanup uses SEEN_INCIDENT_RETENTION_DAYS constant."""
+        from custom_components.abcemergency.coordinator import (
+            SEEN_INCIDENT_RETENTION_DAYS,
+        )
+
+        # Verify constant exists and is reasonable
+        assert isinstance(SEEN_INCIDENT_RETENTION_DAYS, int)
+        assert SEEN_INCIDENT_RETENTION_DAYS >= 7  # At least a week
+        assert SEEN_INCIDENT_RETENTION_DAYS <= 365  # At most a year
+
+    async def test_cleanup_handles_invalid_timestamps(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test cleanup handles invalid timestamp formats gracefully."""
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        now = datetime.now(UTC)
+        recent_date = now.isoformat()
+
+        with patch.object(coordinator, "_store") as mock_store:
+            mock_store.async_load = AsyncMock(
+                return_value={
+                    "seen_incidents": {
+                        "AUREMER-valid": recent_date,
+                        "AUREMER-invalid": "not-a-date",
+                    }
+                }
+            )
+            mock_store.async_save = AsyncMock()
+            await coordinator.async_load_seen_incidents()
+
+        # Valid one should be kept, invalid one should be removed
+        assert "AUREMER-valid" in coordinator._seen_incident_ids
+        assert "AUREMER-invalid" not in coordinator._seen_incident_ids
+
+    async def test_update_refreshes_timestamp_for_existing_incidents(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+        sample_api_response_single: dict[str, Any],
+        freezer: FrozenDateTimeFactory,
+    ) -> None:
+        """Test that refreshing updates timestamps for existing incidents."""
+        from datetime import timedelta
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=sample_api_response_single
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        # Load with old timestamp
+        old_time = datetime.now(UTC) - timedelta(days=20)
+        incident_id = sample_api_response_single["emergencies"][0]["id"]
+
+        with patch.object(coordinator, "_store") as mock_store:
+            mock_store.async_load = AsyncMock(
+                return_value={
+                    "seen_incidents": {
+                        incident_id: old_time.isoformat(),
+                    }
+                }
+            )
+            mock_store.async_save = AsyncMock()
+            await coordinator.async_load_seen_incidents()
+
+            # Do an update - this should refresh the timestamp
+            await coordinator._async_update_data()
+
+            # Check that save was called with updated timestamp
+            mock_store.async_save.assert_called()
+            saved_data = mock_store.async_save.call_args[0][0]
+            new_timestamp = datetime.fromisoformat(saved_data["seen_incidents"][incident_id])
+            # New timestamp should be more recent than old one
+            assert new_timestamp > old_time

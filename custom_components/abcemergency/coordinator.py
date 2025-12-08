@@ -13,7 +13,7 @@ The coordinator supports three instance types:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 from homeassistant.core import HomeAssistant
@@ -80,8 +80,11 @@ ALERT_LEVEL_PRIORITY: dict[str, int] = {
 }
 
 # Storage configuration for incident ID persistence
-STORAGE_VERSION = 1
+STORAGE_VERSION = 2  # v2: dict with timestamps instead of list
 STORAGE_KEY_PREFIX = f"{DOMAIN}_seen_incidents"
+
+# Seen incident retention (days) - incidents older than this are cleaned up
+SEEN_INCIDENT_RETENTION_DAYS = 30
 
 
 class _ContainmentSummary(TypedDict):
@@ -148,7 +151,8 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._radii: dict[str, int] = self._load_radii()
 
         # Incident tracking for event firing
-        self._seen_incident_ids: set[str] = set()
+        # Maps incident ID to ISO timestamp of when it was last seen
+        self._seen_incidents: dict[str, str] = {}
         self._first_refresh: bool = True
 
         # Containment tracking for enter/exit events
@@ -156,8 +160,8 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._previously_containing_incidents: dict[str, EmergencyIncident] = {}
         self._first_containment_check: bool = True
 
-        # Storage for persisting seen incident IDs
-        self._store: Store[dict[str, list[str]]] = Store(
+        # Storage for persisting seen incident IDs with timestamps
+        self._store: Store[dict[str, dict[str, str] | list[str]]] = Store(
             hass,
             STORAGE_VERSION,
             f"{STORAGE_KEY_PREFIX}_{entry.entry_id}",
@@ -194,24 +198,81 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         category = INCIDENT_TYPE_TO_RADIUS_CATEGORY.get(event_type, "other")
         return self._radii.get(category, self._radii["other"])
 
+    @property
+    def _seen_incident_ids(self) -> set[str]:
+        """Return the set of seen incident IDs for backwards compatibility."""
+        return set(self._seen_incidents.keys())
+
     async def async_load_seen_incidents(self) -> None:
         """Load previously seen incident IDs from storage.
 
         This allows the coordinator to resume tracking after a Home Assistant
         restart without re-announcing previously seen incidents.
+
+        Handles migration from v1 (list of IDs) to v2 (dict with timestamps).
         """
         data = await self._store.async_load()
-        if data and "seen_ids" in data:
-            self._seen_incident_ids = set(data["seen_ids"])
-            self._first_refresh = False  # Not first if we have history
+        if data is None:
+            return
+
+        # Handle v2 format: dict with timestamps
+        if "seen_incidents" in data and isinstance(data["seen_incidents"], dict):
+            self._seen_incidents = dict(data["seen_incidents"])
+            self._cleanup_old_incidents()
+            self._first_refresh = False
             _LOGGER.debug(
-                "Loaded %d previously seen incident IDs from storage",
-                len(self._seen_incident_ids),
+                "Loaded %d previously seen incident IDs from storage (v2 format)",
+                len(self._seen_incidents),
             )
+            return
+
+        # Handle v1 format: list of IDs - migrate to v2
+        if "seen_ids" in data and isinstance(data["seen_ids"], list):
+            now = datetime.now(UTC).isoformat()
+            self._seen_incidents = dict.fromkeys(data["seen_ids"], now)
+            self._first_refresh = False
+            _LOGGER.debug(
+                "Loaded %d previously seen incident IDs from storage (migrated from v1)",
+                len(self._seen_incidents),
+            )
+            # Save in v2 format to complete migration
+            await self._save_seen_incidents()
+
+    def _cleanup_old_incidents(self) -> None:
+        """Remove incidents not seen in the retention period.
+
+        Cleans up the _seen_incidents dict by removing entries with
+        timestamps older than SEEN_INCIDENT_RETENTION_DAYS.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=SEEN_INCIDENT_RETENTION_DAYS)
+        to_remove: list[str] = []
+
+        for incident_id, timestamp_str in self._seen_incidents.items():
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                # Ensure timezone-aware comparison
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=UTC)
+                if timestamp < cutoff:
+                    to_remove.append(incident_id)
+            except (ValueError, TypeError):
+                # Invalid timestamp - remove it
+                to_remove.append(incident_id)
+                _LOGGER.debug(
+                    "Removing incident %s with invalid timestamp: %s",
+                    incident_id,
+                    timestamp_str,
+                )
+
+        for incident_id in to_remove:
+            del self._seen_incidents[incident_id]
+
+        if to_remove:
+            _LOGGER.debug("Cleaned up %d old incident IDs", len(to_remove))
 
     async def _save_seen_incidents(self) -> None:
-        """Save seen incident IDs to storage."""
-        await self._store.async_save({"seen_ids": list(self._seen_incident_ids)})
+        """Save seen incident IDs to storage in v2 format."""
+        await self._store.async_save({"seen_incidents": self._seen_incidents})
 
     async def async_remove_storage(self) -> None:
         """Remove storage file when config entry is removed."""
@@ -259,8 +320,10 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 new_incidents = [i for i in data.incidents if i.id in new_ids]
                 await self._fire_new_incident_events(new_incidents)
 
-        # Update tracking state
-        self._seen_incident_ids = current_ids
+        # Update tracking state with current timestamps
+        # This refreshes timestamps for existing incidents and adds new ones
+        now = datetime.now(UTC).isoformat()
+        self._seen_incidents = dict.fromkeys(current_ids, now)
         self._first_refresh = False
 
         # Persist to storage

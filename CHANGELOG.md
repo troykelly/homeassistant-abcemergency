@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-12-08
+
 ### Added
 
 - **Point-in-Polygon Containment Detection** - Detect when your monitored location is inside an emergency polygon boundary, not just nearby
@@ -26,11 +28,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - `highest_containing_level` - Highest alert level of containing incidents
 - Added `shapely` dependency for accurate geospatial polygon calculations
 - Comprehensive documentation for containment detection
+- TTL-based cleanup for seen incident storage to prevent unbounded growth
+- Cached Shapely prepared geometries for efficient containment checks
 
 ### Changed
 
 - EmergencyIncident model now stores polygon geometry data
 - Coordinator performs containment checks during each update cycle
+
+### Fixed
+
+- Added missing containment binary sensor translations
+- Added types-shapely for mypy type checking in CI
 
 ## [0.3.0] - 2025-12-07
 
@@ -96,11 +105,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.4.0 | 2025-12-08 | Point-in-polygon containment detection, new containment binary sensors and events |
 | 0.3.0 | 2025-12-07 | Documentation improvements, Blueprints, my.home-assistant.io buttons |
 | 0.2.0 | 2025-12-07 | Instance-based map filtering, new events, enhanced attributes |
 | 0.1.0 | 2025-12-07 | Initial release with all core features |
 
-[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/troykelly/homeassistant-abcemergency/releases/tag/v0.1.0

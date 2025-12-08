@@ -2961,3 +2961,632 @@ class TestEmergencyIncidentContainsPointField:
         )
 
         assert incident.contains_point is True
+
+
+class TestContainmentEvents:
+    """Test containment event firing for enter/exit/inside polygon."""
+
+    @pytest.fixture
+    def polygon_near_sydney(self) -> list[list[list[float]]]:
+        """Create a small polygon near Sydney that contains the test point."""
+        # Sydney coords: -33.8688, 151.2093
+        # Create a box around Sydney
+        return [
+            [
+                [151.15, -33.92],  # SW
+                [151.25, -33.92],  # SE
+                [151.25, -33.82],  # NE
+                [151.15, -33.82],  # NW
+                [151.15, -33.92],  # Close the ring
+            ]
+        ]
+
+    @pytest.fixture
+    def polygon_away_from_sydney(self) -> list[list[list[float]]]:
+        """Create a polygon that doesn't contain the test point."""
+        # Far away from Sydney
+        return [
+            [
+                [150.0, -34.5],
+                [150.1, -34.5],
+                [150.1, -34.4],
+                [150.0, -34.4],
+                [150.0, -34.5],
+            ]
+        ]
+
+    @pytest.fixture
+    def api_response_with_containing_polygon(
+        self, polygon_near_sydney: list[list[list[float]]]
+    ) -> dict:
+        """Create API response with an incident polygon containing the monitored point."""
+        return {
+            "emergencies": [
+                {
+                    "id": "incident-inside",
+                    "headline": "Bushfire Inside Zone",
+                    "to": "/emergency/warning/incident-inside",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2024-01-15T01:00:00+00:00",
+                        "formattedTime": "12:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2024-01-15T01:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "Large",
+                        "status": "Going",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": polygon_near_sydney,
+                    },
+                }
+            ],
+            "features": [],
+        }
+
+    @pytest.fixture
+    def api_response_with_non_containing_polygon(
+        self, polygon_away_from_sydney: list[list[list[float]]]
+    ) -> dict:
+        """Create API response with an incident polygon NOT containing the monitored point."""
+        return {
+            "emergencies": [
+                {
+                    "id": "incident-outside",
+                    "headline": "Bushfire Outside Zone",
+                    "to": "/emergency/warning/incident-outside",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2024-01-15T01:00:00+00:00",
+                        "formattedTime": "12:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2024-01-15T01:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "Large",
+                        "status": "Going",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": polygon_away_from_sydney,
+                    },
+                }
+            ],
+            "features": [],
+        }
+
+    async def test_entered_polygon_event_fired_when_entering(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_non_containing_polygon: dict,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test abc_emergency_entered_polygon event fires when entering polygon."""
+        # Set up to start outside, then move inside
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                api_response_with_non_containing_polygon,  # First refresh - outside
+                api_response_with_containing_polygon,  # Second refresh - inside
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        # Track fired events
+        entered_events: list = []
+
+        def capture_entered_event(event) -> None:
+            entered_events.append(event)
+
+        hass.bus.async_listen("abc_emergency_entered_polygon", capture_entered_event)
+
+        # First refresh - outside polygon
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(entered_events) == 0  # No enter event on first refresh
+
+        # Second refresh - now inside polygon
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(entered_events) == 1
+
+        # Verify event data
+        event_data = entered_events[0].data
+        assert event_data["incident_id"] == "incident-inside"
+        assert event_data["headline"] == "Bushfire Inside Zone"
+        assert event_data["alert_level"] == "severe"
+        assert event_data["instance_type"] == "zone"
+
+    async def test_exited_polygon_event_fired_when_exiting(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+        api_response_with_non_containing_polygon: dict,
+    ) -> None:
+        """Test abc_emergency_exited_polygon event fires when exiting polygon."""
+        # Set up to start inside, then move outside
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                api_response_with_containing_polygon,  # First refresh - inside
+                api_response_with_non_containing_polygon,  # Second refresh - outside
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        # Track fired events
+        exited_events: list = []
+
+        def capture_exited_event(event) -> None:
+            exited_events.append(event)
+
+        hass.bus.async_listen("abc_emergency_exited_polygon", capture_exited_event)
+
+        # First refresh - inside polygon
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(exited_events) == 0  # No exit event on first refresh
+
+        # Second refresh - now outside polygon
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(exited_events) == 1
+
+        # Verify event data
+        event_data = exited_events[0].data
+        assert event_data["incident_id"] == "incident-inside"
+        assert event_data["headline"] == "Bushfire Inside Zone"
+
+    async def test_inside_polygon_event_fired_each_update(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test abc_emergency_inside_polygon event fires on each update while inside."""
+        # Always inside
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        # Track fired events
+        inside_events: list = []
+
+        def capture_inside_event(event) -> None:
+            inside_events.append(event)
+
+        hass.bus.async_listen("abc_emergency_inside_polygon", capture_inside_event)
+
+        # First refresh - inside but shouldn't fire yet (first load)
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(inside_events) == 0
+
+        # Second refresh - should fire inside event
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(inside_events) == 1
+
+        # Third refresh - should fire again
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(inside_events) == 2
+
+    async def test_no_containment_events_on_first_load(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test that no containment events fire on first data load."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        # Track all containment events
+        entered_events: list = []
+        inside_events: list = []
+
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
+        hass.bus.async_listen("abc_emergency_inside_polygon", lambda e: inside_events.append(e))
+
+        # First refresh - no events should fire
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(entered_events) == 0
+        assert len(inside_events) == 0
+
+    async def test_state_mode_no_containment_events(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test that state mode does not fire containment events."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        # Track all containment events
+        all_events: list = []
+
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: all_events.append(e))
+        hass.bus.async_listen("abc_emergency_inside_polygon", lambda e: all_events.append(e))
+        hass.bus.async_listen("abc_emergency_exited_polygon", lambda e: all_events.append(e))
+
+        # Multiple refreshes - no containment events for state mode
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(all_events) == 0
+
+    async def test_entered_event_includes_monitored_location(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_non_containing_polygon: dict,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test entered event includes monitored location coordinates."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                api_response_with_non_containing_polygon,
+                api_response_with_containing_polygon,
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        entered_events: list = []
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
+
+        await coordinator.async_refresh()  # Outside
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()  # Inside
+        await hass.async_block_till_done()
+
+        assert len(entered_events) == 1
+        event_data = entered_events[0].data
+        assert event_data["monitored_latitude"] == -33.8688
+        assert event_data["monitored_longitude"] == 151.2093
+
+    async def test_exited_event_works_when_incident_cleared(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test exit event fires with incident details even when incident is cleared."""
+        # First inside, then incident disappears completely
+        empty_response = {"emergencies": [], "features": []}
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                api_response_with_containing_polygon,  # First refresh - inside
+                empty_response,  # Second refresh - incident gone
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        exited_events: list = []
+        hass.bus.async_listen("abc_emergency_exited_polygon", lambda e: exited_events.append(e))
+
+        await coordinator.async_refresh()  # Inside
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()  # Incident gone
+        await hass.async_block_till_done()
+
+        assert len(exited_events) == 1
+        # Event should still have incident details from cache
+        event_data = exited_events[0].data
+        assert event_data["incident_id"] == "incident-inside"
+        assert event_data["headline"] == "Bushfire Inside Zone"
+
+    async def test_entered_event_data_structure(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+        api_response_with_non_containing_polygon: dict,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test that entered event has all expected data fields."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            side_effect=[
+                api_response_with_non_containing_polygon,
+                api_response_with_containing_polygon,
+            ]
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,
+            longitude=151.2093,
+        )
+
+        entered_events: list = []
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert len(entered_events) == 1
+        event_data = entered_events[0].data
+
+        # Verify all expected fields are present
+        expected_fields = [
+            "config_entry_id",
+            "instance_name",
+            "instance_type",
+            "incident_id",
+            "headline",
+            "event_type",
+            "event_icon",
+            "alert_level",
+            "alert_text",
+            "latitude",
+            "longitude",
+            "monitored_latitude",
+            "monitored_longitude",
+            "status",
+            "source",
+            "updated",
+        ]
+
+        for field in expected_fields:
+            assert field in event_data, f"Missing field: {field}"
+
+
+class TestContainmentEventsPersonMode:
+    """Test containment events in person mode."""
+
+    @pytest.fixture
+    def polygon_near_sydney(self) -> list[list[list[float]]]:
+        """Create a small polygon near Sydney."""
+        return [
+            [
+                [151.15, -33.92],
+                [151.25, -33.92],
+                [151.25, -33.82],
+                [151.15, -33.82],
+                [151.15, -33.92],
+            ]
+        ]
+
+    @pytest.fixture
+    def api_response_with_containing_polygon(
+        self, polygon_near_sydney: list[list[list[float]]]
+    ) -> dict:
+        """Create API response with containing polygon."""
+        return {
+            "emergencies": [
+                {
+                    "id": "incident-person-inside",
+                    "headline": "Flood Near Person",
+                    "to": "/emergency/warning/incident-person-inside",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency Warning",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2024-01-15T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2024-01-15T03:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "weather", "labelText": "Flood"},
+                    "cardBody": {
+                        "type": "Flood",
+                        "size": None,
+                        "status": "Active",
+                        "source": "NSW SES",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": polygon_near_sydney,
+                    },
+                }
+            ],
+            "features": [],
+        }
+
+    async def test_person_mode_entered_event_when_person_moves_into_polygon(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test person mode fires entered event when person moves into polygon."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        # Create person entity states
+        hass.states.async_set(
+            "person.troy",
+            "home",
+            {
+                "latitude": -34.0,  # Outside polygon
+                "longitude": 151.0,
+            },
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.troy",
+        )
+
+        entered_events: list = []
+        hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
+
+        # First refresh - outside
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(entered_events) == 0
+
+        # Move person into polygon
+        hass.states.async_set(
+            "person.troy",
+            "home",
+            {
+                "latitude": -33.87,  # Inside polygon
+                "longitude": 151.2,
+            },
+        )
+
+        # Second refresh - now inside
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(entered_events) == 1
+        assert entered_events[0].data["instance_type"] == "person"
+
+    async def test_person_mode_no_exit_when_location_unknown(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+        api_response_with_containing_polygon: dict,
+    ) -> None:
+        """Test no exit event fires when person location becomes unknown."""
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=api_response_with_containing_polygon
+        )
+
+        # Start with known location inside polygon
+        hass.states.async_set(
+            "person.troy",
+            "home",
+            {
+                "latitude": -33.87,
+                "longitude": 151.2,
+            },
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.troy",
+        )
+
+        exited_events: list = []
+        hass.bus.async_listen("abc_emergency_exited_polygon", lambda e: exited_events.append(e))
+
+        # First refresh - inside
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Make location unknown
+        hass.states.async_set("person.troy", "unknown", {})
+
+        # Second refresh - location unknown
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # Should NOT fire exit event when location becomes unknown
+        assert len(exited_events) == 0

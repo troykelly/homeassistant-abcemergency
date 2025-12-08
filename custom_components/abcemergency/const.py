@@ -501,3 +501,24 @@ class StoredGeometry(TypedDict):
 
     type: Literal["Point", "Polygon", "MultiPolygon"]
     polygons: list[StoredPolygon] | None
+
+
+# Containment tracking TypedDicts for polygon enter/exit events
+
+
+class ContainmentState(TypedDict):
+    """Previous containment state for an incident.
+
+    Tracks the actual containment relationship between a monitored point
+    and an incident polygon, not just the incident ID. This enables
+    detection of polygon boundary changes and severity escalations.
+
+    Attributes:
+        was_containing: Whether the incident polygon contained the point.
+        alert_level: The alert level of the incident (extreme, severe, moderate, minor).
+        alert_text: Human-readable alert text (Emergency, Watch and Act, Advice, "").
+    """
+
+    was_containing: bool
+    alert_level: str
+    alert_text: str

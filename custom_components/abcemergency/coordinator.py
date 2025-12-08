@@ -46,6 +46,7 @@ from .const import (
     INSTANCE_TYPE_STATE,
     INSTANCE_TYPE_ZONE,
     AlertLevel,
+    ContainmentState,
     Emergency,
     Geometry,
     GeometryCollectionGeometry,
@@ -156,7 +157,13 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._first_refresh: bool = True
 
         # Containment tracking for enter/exit events
-        self._previously_containing_ids: set[str] = set()
+        # Maps incident ID to its previous containment state (was_containing, alert_level)
+        # This tracks actual containment state, not just ID presence, to detect:
+        # - Polygon expansion (incident exists but wasn't containing -> now containing)
+        # - Polygon contraction (incident was containing -> still exists but not containing)
+        # - Severity changes (alert level changed while containing)
+        self._previous_containment_state: dict[str, ContainmentState] = {}
+        # Cache of incident objects from previous cycle for exit event data
         self._previously_containing_incidents: dict[str, EmergencyIncident] = {}
         self._first_containment_check: bool = True
 
@@ -931,6 +938,12 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         Fires events when the monitored location enters, exits, or is inside
         an emergency polygon. Only fires for zone/person modes.
 
+        This method tracks ACTUAL containment state, not just incident IDs.
+        This enables detection of:
+        - Polygon expansion: incident existed but wasn't containing, now is
+        - Polygon contraction: incident was containing, still exists but isn't
+        - Severity changes: alert level changed while still containing (Issue #92)
+
         Args:
             data: The processed coordinator data.
         """
@@ -938,46 +951,69 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if self._instance_type == INSTANCE_TYPE_STATE:
             return
 
-        # Handle first containment check - just populate state, don't fire events
+        # Build map of current incidents for lookup
+        current_incident_map = {inc.id: inc for inc in data.incidents}
+
+        # Build set of currently containing incident IDs
+        current_containing_ids = {inc.id for inc in data.containing_incidents}
+
+        # Handle first containment check - populate state without firing events
         if self._first_containment_check:
-            self._previously_containing_ids = {inc.id for inc in data.containing_incidents}
+            self._previous_containment_state = {
+                inc.id: ContainmentState(
+                    was_containing=True,
+                    alert_level=inc.alert_level,
+                    alert_text=inc.alert_text,
+                )
+                for inc in data.containing_incidents
+            }
             self._previously_containing_incidents = {
                 inc.id: inc for inc in data.containing_incidents
             }
             self._first_containment_check = False
             return
 
-        # Handle person mode with unknown location - don't fire exit events
+        # Handle person mode with unknown location - clear state without firing events
         if self._instance_type == INSTANCE_TYPE_PERSON and not data.location_available:
-            # Clear tracking state but don't fire exit events
-            self._previously_containing_ids = set()
+            self._previous_containment_state = {}
             self._previously_containing_incidents = {}
             return
-
-        # Get current containing incident IDs
-        current_containing_ids = {inc.id for inc in data.containing_incidents}
-
-        # Detect newly entered polygons
-        entered_ids = current_containing_ids - self._previously_containing_ids
-
-        # Detect exited polygons
-        exited_ids = self._previously_containing_ids - current_containing_ids
-
-        # Map current incident IDs to incidents
-        current_incident_map = {inc.id: inc for inc in data.incidents}
 
         # Get monitored coordinates
         monitored_lat = data.current_latitude
         monitored_lon = data.current_longitude
 
-        # Fire entered events
-        for incident_id in entered_ids:
+        # Detect ENTERED polygons:
+        # - New incident that contains the point, OR
+        # - Existing incident that wasn't containing but now is (polygon expanded)
+        for incident_id in current_containing_ids:
             incident = current_incident_map.get(incident_id)
-            if incident:
+            if not incident:  # pragma: no cover - defensive guard for impossible state
+                continue
+
+            prev_state = self._previous_containment_state.get(incident_id)
+
+            # Fire entered event if:
+            # 1. Incident is new (no previous state), OR
+            # 2. Incident existed but wasn't containing (polygon expanded to include point)
+            if prev_state is None or not prev_state["was_containing"]:
                 self._fire_entered_polygon_event(incident, data, monitored_lat, monitored_lon)
 
-        # Fire exited events (use cached incident data for cleared incidents)
-        for incident_id in exited_ids:
+        # Detect EXITED polygons:
+        # - Incident was containing and is now gone, OR
+        # - Incident was containing and still exists but no longer contains (polygon shrank)
+        for incident_id, prev_state in self._previous_containment_state.items():
+            if not prev_state[
+                "was_containing"
+            ]:  # pragma: no cover - already skipped at state update
+                continue
+
+            # Check if still containing
+            if incident_id in current_containing_ids:
+                continue
+
+            # Was containing, now not containing - fire exit event
+            # Use current incident if still exists, otherwise cached incident
             incident = current_incident_map.get(
                 incident_id
             ) or self._previously_containing_incidents.get(incident_id)
@@ -988,8 +1024,41 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         for incident in data.containing_incidents:
             self._fire_inside_polygon_event(incident, data, monitored_lat, monitored_lon)
 
+        # Check for severity changes while inside polygon (Issue #92)
+        # Fire severity_changed event when alert level changes for containing incidents
+        for incident_id in current_containing_ids:
+            incident = current_incident_map.get(incident_id)
+            if not incident:  # pragma: no cover - defensive guard for impossible state
+                continue
+
+            prev_state = self._previous_containment_state.get(incident_id)
+            if prev_state is None or not prev_state["was_containing"]:
+                # New containment or wasn't containing - no severity comparison
+                continue
+
+            # Check if alert level changed
+            if prev_state["alert_level"] != incident.alert_level:
+                self._fire_severity_changed_event(
+                    incident=incident,
+                    previous_alert_level=prev_state["alert_level"],
+                    previous_alert_text=prev_state["alert_text"],
+                    data=data,
+                    monitored_lat=monitored_lat,
+                    monitored_lon=monitored_lon,
+                )
+
         # Update tracking state for next cycle
-        self._previously_containing_ids = current_containing_ids
+        # Track state for ALL incidents we know about, marking whether they contain
+        new_containment_state: dict[str, ContainmentState] = {}
+        for incident in data.incidents:
+            is_containing = incident.id in current_containing_ids
+            new_containment_state[incident.id] = ContainmentState(
+                was_containing=is_containing,
+                alert_level=incident.alert_level,
+                alert_text=incident.alert_text,
+            )
+
+        self._previous_containment_state = new_containment_state
         self._previously_containing_incidents = {inc.id: inc for inc in data.containing_incidents}
 
     def _build_containment_event_data(
@@ -1094,3 +1163,57 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
             incident, data, monitored_lat, monitored_lon
         )
         self.hass.bus.async_fire("abc_emergency_inside_polygon", event_data)
+
+    def _fire_severity_changed_event(
+        self,
+        incident: EmergencyIncident,
+        previous_alert_level: str,
+        previous_alert_text: str,
+        data: CoordinatorData,
+        monitored_lat: float | None,
+        monitored_lon: float | None,
+    ) -> None:
+        """Fire event when alert level changes while inside a polygon.
+
+        This event fires when the severity of an incident changes while the
+        monitored point remains inside its polygon. This enables automations
+        to respond to escalation (e.g., Advice -> Emergency Warning) or
+        de-escalation events.
+
+        Args:
+            incident: The incident whose severity changed.
+            previous_alert_level: The previous alert level (extreme, severe, moderate, minor).
+            previous_alert_text: The previous human-readable alert text.
+            data: The coordinator data.
+            monitored_lat: The monitored point latitude.
+            monitored_lon: The monitored point longitude.
+        """
+        # Determine if this is an escalation or de-escalation
+        previous_priority = ALERT_LEVEL_PRIORITY.get(previous_alert_level, 0)
+        current_priority = ALERT_LEVEL_PRIORITY.get(incident.alert_level, 0)
+        escalated = current_priority > previous_priority
+
+        # Build event data with severity change specific fields
+        event_data = self._build_containment_event_data(
+            incident, data, monitored_lat, monitored_lon
+        )
+        event_data.update(
+            {
+                "previous_alert_level": previous_alert_level,
+                "previous_alert_text": previous_alert_text,
+                "new_alert_level": incident.alert_level,
+                "new_alert_text": incident.alert_text,
+                "escalated": escalated,
+            }
+        )
+
+        self.hass.bus.async_fire("abc_emergency_containment_severity_changed", event_data)
+
+        direction = "escalated" if escalated else "de-escalated"
+        _LOGGER.info(
+            "Severity %s for %s: %s -> %s",
+            direction,
+            incident.headline,
+            previous_alert_text or previous_alert_level,
+            incident.alert_text or incident.alert_level,
+        )

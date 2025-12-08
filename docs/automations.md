@@ -836,6 +836,109 @@ automation:
             Alert level: {{ trigger.event.data.alert_text }}
 ```
 
+### Severity Escalation Alert
+
+Get notified when the severity level of an incident **changes** while you're inside its polygon. This is critical for situations where an Advice level warning escalates to Watch and Act or Emergency Warning.
+
+```yaml
+automation:
+  - id: abc_emergency_severity_escalation
+    alias: "ABC Emergency - Severity Escalation"
+    description: >
+      Critical alert when an emergency you're inside escalates.
+      For example, Advice -> Watch and Act or Watch and Act -> Emergency Warning.
+    trigger:
+      - platform: event
+        event_type: abc_emergency_containment_severity_changed
+    condition:
+      - condition: template
+        value_template: "{{ trigger.event.data.escalated == true }}"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "⚠️ ALERT LEVEL INCREASED"
+          message: >
+            {{ trigger.event.data.headline }} has escalated from
+            {{ trigger.event.data.previous_alert_text }} to
+            {{ trigger.event.data.new_alert_text }}!
+            Take action now!
+          data:
+            priority: critical
+            ttl: 0
+            channel: alarm_stream
+
+  - id: abc_emergency_severity_deescalation
+    alias: "ABC Emergency - Severity De-escalation"
+    description: "Notify when an emergency you're inside de-escalates"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_containment_severity_changed
+    condition:
+      - condition: template
+        value_template: "{{ trigger.event.data.escalated == false }}"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Alert Level Reduced"
+          message: >
+            {{ trigger.event.data.headline }} has de-escalated from
+            {{ trigger.event.data.previous_alert_text }} to
+            {{ trigger.event.data.new_alert_text }}.
+            Continue to monitor conditions.
+```
+
+### Multiple Containment Events in One Automation
+
+Handle all containment transitions in a single automation:
+
+```yaml
+automation:
+  - id: abc_emergency_containment_comprehensive
+    alias: "ABC Emergency - Comprehensive Containment Handler"
+    description: "Handle all containment events: enter, exit, severity change"
+    trigger:
+      - platform: event
+        event_type: abc_emergency_entered_polygon
+        id: entered
+      - platform: event
+        event_type: abc_emergency_exited_polygon
+        id: exited
+      - platform: event
+        event_type: abc_emergency_containment_severity_changed
+        id: severity_changed
+    action:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: entered
+            sequence:
+              - service: notify.mobile_app_your_phone
+                data:
+                  title: "Entered {{ trigger.event.data.alert_text }} Zone"
+                  message: "{{ trigger.event.data.headline }}"
+          - conditions:
+              - condition: trigger
+                id: exited
+            sequence:
+              - service: notify.mobile_app_your_phone
+                data:
+                  title: "Left Emergency Zone"
+                  message: "You have left {{ trigger.event.data.headline }}"
+          - conditions:
+              - condition: trigger
+                id: severity_changed
+            sequence:
+              - service: notify.mobile_app_your_phone
+                data:
+                  title: >
+                    {% if trigger.event.data.escalated %}⚠️ ESCALATED{% else %}De-escalated{% endif %}
+                  message: >
+                    {{ trigger.event.data.headline }}:
+                    {{ trigger.event.data.previous_alert_text }} → {{ trigger.event.data.new_alert_text }}
+                  data:
+                    priority: "{{ 'critical' if trigger.event.data.escalated else 'normal' }}"
+```
+
 ---
 
 ## Event-Based Automations
@@ -1012,8 +1115,9 @@ automation:
 | `abc_emergency_entered_polygon` | Fired when entering an emergency polygon (Zone/Person mode) |
 | `abc_emergency_exited_polygon` | Fired when exiting an emergency polygon (Zone/Person mode) |
 | `abc_emergency_inside_polygon` | Fired each update while inside a polygon (Zone/Person mode) |
+| `abc_emergency_containment_severity_changed` | Fired when alert level changes while inside a polygon (Zone/Person mode) |
 
-> **Note:** Type-specific events use a slugified version of the incident type (lowercase, spaces replaced with underscores). Containment events (entered/exited/inside_polygon) are only fired for Zone and Person modes, not State mode.
+> **Note:** Type-specific events use a slugified version of the incident type (lowercase, spaces replaced with underscores). Containment events (entered/exited/inside_polygon/containment_severity_changed) are only fired for Zone and Person modes, not State mode.
 
 #### Event Data Fields
 
@@ -1039,6 +1143,18 @@ All events include the following data fields:
 | `size` | string \| null | Incident size (e.g., "500 ha") |
 | `source` | string \| null | Data source agency (e.g., "NSW Rural Fire Service") |
 | `updated` | string | ISO 8601 timestamp of last update |
+
+#### Severity Changed Event Additional Fields
+
+The `abc_emergency_containment_severity_changed` event includes all standard fields plus:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `previous_alert_level` | string | Previous alert level (`"extreme"`, `"severe"`, `"moderate"`, `"minor"`) |
+| `previous_alert_text` | string | Previous display text (`"Emergency Warning"`, `"Watch and Act"`, `"Advice"`, `""`) |
+| `new_alert_level` | string | New alert level |
+| `new_alert_text` | string | New display text |
+| `escalated` | boolean | `true` if severity increased, `false` if decreased |
 
 ---
 

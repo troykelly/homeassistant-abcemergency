@@ -324,15 +324,16 @@ class TestIntegrationFullFlow:
             await hass.config_entries.async_setup(zone_config_entry.entry_id)
             await hass.async_block_till_done()
 
-        # Verify binary sensor is ON for inside_polygon (entity_id uses "safety" from device_class)
-        state = hass.states.get("binary_sensor.abc_emergency_home_zone_safety")
+        # Verify binary sensor is ON for inside_polygon
+        state = hass.states.get("binary_sensor.abc_emergency_home_zone_inside_emergency_zone")
         assert state is not None
         assert state.state == "on"
         assert state.attributes["containing_count"] == 1
 
         # Verify inside_emergency_warning is ON (extreme = emergency warning)
-        # Entity_id uses "safety_2" (collision avoidance with inside_polygon)
-        state = hass.states.get("binary_sensor.abc_emergency_home_zone_safety_2")
+        state = hass.states.get(
+            "binary_sensor.abc_emergency_home_zone_inside_emergency_warning_zone"
+        )
         assert state is not None
         assert state.state == "on"
 
@@ -354,8 +355,8 @@ class TestIntegrationFullFlow:
             await hass.config_entries.async_setup(zone_config_entry.entry_id)
             await hass.async_block_till_done()
 
-        # Verify binary sensor is OFF for inside_polygon (entity_id uses "safety")
-        state = hass.states.get("binary_sensor.abc_emergency_home_zone_safety")
+        # Verify binary sensor is OFF for inside_polygon
+        state = hass.states.get("binary_sensor.abc_emergency_home_zone_inside_emergency_zone")
         assert state is not None
         assert state.state == "off"
 
@@ -519,8 +520,8 @@ class TestIntegrationPersonMode:
             await hass.config_entries.async_setup(person_config_entry.entry_id)
             await hass.async_block_till_done()
 
-        # Verify person is inside polygon (entity_id uses "safety" from device_class)
-        state = hass.states.get("binary_sensor.abc_emergency_test_user_safety")
+        # Verify person is inside polygon
+        state = hass.states.get("binary_sensor.abc_emergency_test_user_inside_emergency_zone")
         assert state is not None
         assert state.state == "on"
 
@@ -557,8 +558,8 @@ class TestIntegrationPersonMode:
             await hass.config_entries.async_setup(person_config_entry.entry_id)
             await hass.async_block_till_done()
 
-            # Verify outside polygon initially (entity_id uses "safety")
-            state = hass.states.get("binary_sensor.abc_emergency_test_user_safety")
+            # Verify outside polygon initially
+            state = hass.states.get("binary_sensor.abc_emergency_test_user_inside_emergency_zone")
             assert state is not None
             assert state.state == "off"
             assert len(entered_events) == 0
@@ -576,7 +577,7 @@ class TestIntegrationPersonMode:
             await hass.async_block_till_done()
 
         # Now inside polygon
-        state = hass.states.get("binary_sensor.abc_emergency_test_user_safety")
+        state = hass.states.get("binary_sensor.abc_emergency_test_user_inside_emergency_zone")
         assert state.state == "on"
 
         # Entered event should have fired
@@ -605,11 +606,12 @@ class TestIntegrationStateMode:
             await hass.async_block_till_done()
 
         # Verify containment sensors don't exist for state mode
-        # Containment sensors would use "safety*" entity_ids if they existed
-        assert hass.states.get("binary_sensor.abc_emergency_nsw_safety") is None
-        assert hass.states.get("binary_sensor.abc_emergency_nsw_safety_2") is None
-        assert hass.states.get("binary_sensor.abc_emergency_nsw_safety_3") is None
-        assert hass.states.get("binary_sensor.abc_emergency_nsw_safety_4") is None
+        assert hass.states.get("binary_sensor.abc_emergency_nsw_inside_emergency_zone") is None
+        assert (
+            hass.states.get("binary_sensor.abc_emergency_nsw_inside_emergency_warning_zone") is None
+        )
+        assert hass.states.get("binary_sensor.abc_emergency_nsw_inside_watch_and_act_zone") is None
+        assert hass.states.get("binary_sensor.abc_emergency_nsw_inside_advice_zone") is None
 
     async def test_state_mode_sensor_containment_attributes_null(
         self,
@@ -694,8 +696,8 @@ class TestIntegrationEmptyData:
             await hass.config_entries.async_setup(zone_config_entry.entry_id)
             await hass.async_block_till_done()
 
-        # Containment sensors should be OFF (entity_id uses "safety")
-        state = hass.states.get("binary_sensor.abc_emergency_home_zone_safety")
+        # Containment sensors should be OFF
+        state = hass.states.get("binary_sensor.abc_emergency_home_zone_inside_emergency_zone")
         assert state is not None
         assert state.state == "off"
 

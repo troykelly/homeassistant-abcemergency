@@ -127,6 +127,18 @@
       },
       "advice": {
         "name": "Advice"
+      },
+      "inside_polygon": {
+        "name": "Inside Emergency Zone"
+      },
+      "inside_emergency_warning": {
+        "name": "Inside Emergency Warning Zone"
+      },
+      "inside_watch_and_act": {
+        "name": "Inside Watch and Act Zone"
+      },
+      "inside_advice": {
+        "name": "Inside Advice Zone"
       }
     }
   }

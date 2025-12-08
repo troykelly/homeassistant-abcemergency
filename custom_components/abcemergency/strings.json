@@ -129,7 +129,7 @@
         "name": "Advice"
       },
       "inside_polygon": {
-        "name": "Inside Emergency Polygon"
+        "name": "Inside Emergency Zone"
       },
       "inside_emergency_warning": {
         "name": "Inside Emergency Warning Zone"

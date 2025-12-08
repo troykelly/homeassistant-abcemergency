@@ -1038,6 +1038,68 @@ class TestModels:
         assert incident.bearing is None
         assert incident.direction is None
 
+    def test_emergency_incident_geometry_fields_defaults(self) -> None:
+        """Test EmergencyIncident new geometry fields have correct defaults."""
+        from custom_components.abcemergency.models import Coordinate
+
+        incident = EmergencyIncident(
+            id="test",
+            headline="Test",
+            alert_level="minor",
+            alert_text="",
+            event_type="Test",
+            event_icon="other",
+            status=None,
+            size=None,
+            source="Test",
+            location=Coordinate(latitude=-33.0, longitude=151.0),
+            updated=datetime.now(),
+        )
+
+        # New geometry fields should default to None/False
+        assert incident.geometry_type is None
+        assert incident.polygons is None
+        assert incident.has_polygon is False
+
+    def test_emergency_incident_with_polygon_data(self) -> None:
+        """Test EmergencyIncident can store polygon geometry data."""
+        from custom_components.abcemergency.models import Coordinate
+
+        polygon_data = [
+            {
+                "outer_ring": [
+                    [151.0, -33.0],
+                    [152.0, -33.0],
+                    [152.0, -34.0],
+                    [151.0, -34.0],
+                    [151.0, -33.0],
+                ],
+                "inner_rings": None,
+            }
+        ]
+
+        incident = EmergencyIncident(
+            id="test-polygon",
+            headline="Test With Polygon",
+            alert_level="severe",
+            alert_text="Watch and Act",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Out of control",
+            size="100 ha",
+            source="NSW Rural Fire Service",
+            location=Coordinate(latitude=-33.5, longitude=151.5),
+            updated=datetime.now(),
+            geometry_type="Polygon",
+            polygons=polygon_data,
+            has_polygon=True,
+        )
+
+        assert incident.geometry_type == "Polygon"
+        assert incident.polygons is not None
+        assert len(incident.polygons) == 1
+        assert incident.has_polygon is True
+
 
 class TestCoordinatorEdgeCases:
     """Test edge cases and error handling in coordinator."""
@@ -1617,10 +1679,12 @@ class TestGeometryCoordinateExtraction:
             "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
         }
 
-        result = coordinator._extract_location(geometry)
-        assert result is not None
-        assert result.latitude == pytest.approx(-33.4, abs=0.1)
-        assert result.longitude == pytest.approx(150.4, abs=0.1)
+        location, geom_type, polygons = coordinator._extract_location_and_geometry(geometry)
+        assert location is not None
+        assert location.latitude == pytest.approx(-33.4, abs=0.1)
+        assert location.longitude == pytest.approx(150.4, abs=0.1)
+        assert geom_type == "Polygon"
+        assert polygons is not None
 
     async def test_extract_location_from_geometry_collection_polygon_fallback(
         self,
@@ -1654,9 +1718,430 @@ class TestGeometryCoordinateExtraction:
                     ],
                 }
             ],
+            "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
         }
 
-        result = coordinator._extract_location(geometry)
-        assert result is not None
-        assert result.latitude == pytest.approx(-33.4, abs=0.1)
-        assert result.longitude == pytest.approx(150.4, abs=0.1)
+        location, geom_type, polygons = coordinator._extract_location_and_geometry(geometry)
+        assert location is not None
+        assert location.latitude == pytest.approx(-33.4, abs=0.1)
+        assert location.longitude == pytest.approx(150.4, abs=0.1)
+        assert geom_type == "GeometryCollection"
+        assert polygons is not None
+
+
+class TestPolygonGeometryStorage:
+    """Test storing polygon geometry in EmergencyIncident."""
+
+    async def test_polygon_geometry_stored_in_incident(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that polygon geometry is stored when processing incidents."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-polygon-test",
+                    "headline": "Test Bushfire With Polygon",
+                    "to": "/emergency/warning/AUREMER-polygon-test",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "fire",
+                        "labelText": "Bushfire",
+                    },
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "500 ha",
+                        "status": "Out of control",
+                        "source": "NSW Rural Fire Service",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [150.0, -33.0],
+                                [151.0, -33.0],
+                                [151.0, -34.0],
+                                [150.0, -34.0],
+                                [150.0, -33.0],
+                            ]
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        incident = data.incidents[0]
+        assert incident.geometry_type == "Polygon"
+        assert incident.has_polygon is True
+        assert incident.polygons is not None
+        assert len(incident.polygons) == 1
+        assert len(incident.polygons[0]["outer_ring"]) == 5
+        assert incident.polygons[0]["inner_rings"] is None
+
+    async def test_point_geometry_has_no_polygon(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that Point geometry results in has_polygon=False."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-point-test",
+                    "headline": "Test Fire Point",
+                    "to": "/emergency/warning/AUREMER-point-test",
+                    "alertLevelInfoPrepared": {
+                        "text": "Advice",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "fire",
+                        "labelText": "Fire",
+                    },
+                    "cardBody": {
+                        "type": "Structure Fire",
+                        "size": None,
+                        "status": "Under control",
+                        "source": "Fire and Rescue NSW",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "Point",
+                        "coordinates": [151.2, -33.9],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        incident = data.incidents[0]
+        assert incident.geometry_type == "Point"
+        assert incident.has_polygon is False
+        assert incident.polygons is None
+
+    async def test_multipolygon_geometry_stores_all_polygons(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that MultiPolygon geometry stores all polygons."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-multi-test",
+                    "headline": "Severe Heatwave Warning",
+                    "to": "/emergency/warning/AUREMER-multi-test",
+                    "alertLevelInfoPrepared": {
+                        "text": "",
+                        "level": "severe",
+                        "style": "minor",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T03:30:00.00+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "heat",
+                        "labelText": "Heatwave",
+                    },
+                    "cardBody": {
+                        "type": None,
+                        "size": None,
+                        "status": "Active",
+                        "source": "Australian Government Bureau of Meteorology",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "MultiPolygon",
+                        "coordinates": [
+                            [
+                                [
+                                    [150.0, -33.0],
+                                    [151.0, -33.0],
+                                    [151.0, -34.0],
+                                    [150.0, -34.0],
+                                    [150.0, -33.0],
+                                ]
+                            ],
+                            [
+                                [
+                                    [152.0, -35.0],
+                                    [153.0, -35.0],
+                                    [153.0, -36.0],
+                                    [152.0, -36.0],
+                                    [152.0, -35.0],
+                                ]
+                            ],
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -37.0], [154.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        incident = data.incidents[0]
+        assert incident.geometry_type == "MultiPolygon"
+        assert incident.has_polygon is True
+        assert incident.polygons is not None
+        assert len(incident.polygons) == 2
+
+    async def test_geometry_collection_stores_polygon(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that GeometryCollection extracts and stores the polygon."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-collection-test",
+                    "headline": "Test With Point and Polygon",
+                    "to": "/emergency/warning/AUREMER-collection-test",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "fire",
+                        "labelText": "Bushfire",
+                    },
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "1000 ha",
+                        "status": "Out of control",
+                        "source": "NSW Rural Fire Service",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "GeometryCollection",
+                        "geometries": [
+                            {"type": "Point", "coordinates": [150.5, -33.5]},
+                            {
+                                "type": "Polygon",
+                                "coordinates": [
+                                    [
+                                        [150.0, -33.0],
+                                        [151.0, -33.0],
+                                        [151.0, -34.0],
+                                        [150.0, -34.0],
+                                        [150.0, -33.0],
+                                    ]
+                                ],
+                            },
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        incident = data.incidents[0]
+        # GeometryCollection with Point + Polygon
+        assert incident.geometry_type == "GeometryCollection"
+        assert incident.has_polygon is True
+        assert incident.polygons is not None
+        assert len(incident.polygons) == 1
+        # Location should come from Point
+        assert incident.location.latitude == pytest.approx(-33.5, abs=0.01)
+        assert incident.location.longitude == pytest.approx(150.5, abs=0.01)
+
+    async def test_geometry_collection_polygon_only_uses_centroid(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test GeometryCollection with only Polygon (no Point) uses centroid for location."""
+        response = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-polygon-only-collection",
+                    "headline": "Test With Polygon Only",
+                    "to": "/emergency/warning/AUREMER-polygon-only-collection",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:34:00+00:00",
+                        "formattedTime": "4:34:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:53:02.97994+00:00",
+                    },
+                    "eventLabelPrepared": {
+                        "icon": "fire",
+                        "labelText": "Bushfire",
+                    },
+                    "cardBody": {
+                        "type": "Bush Fire",
+                        "size": "200 ha",
+                        "status": "Under control",
+                        "source": "NSW Rural Fire Service",
+                    },
+                    "geometry": {
+                        "crs": {
+                            "type": "name",
+                            "properties": {"name": "EPSG:4326"},
+                        },
+                        "type": "GeometryCollection",
+                        "geometries": [
+                            # No Point - only Polygon
+                            {
+                                "type": "Polygon",
+                                "coordinates": [
+                                    [
+                                        [150.0, -33.0],
+                                        [151.0, -33.0],
+                                        [151.0, -34.0],
+                                        [150.0, -34.0],
+                                        [150.0, -33.0],
+                                    ]
+                                ],
+                            },
+                        ],
+                    },
+                }
+            ],
+            "features": [],
+            "mapBound": [[149.0, -35.0], [152.0, -32.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 1,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert len(data.incidents) == 1
+        incident = data.incidents[0]
+        assert incident.geometry_type == "GeometryCollection"
+        assert incident.has_polygon is True
+        assert incident.polygons is not None
+        # Location should be calculated from polygon centroid
+        # Centroid of polygon [150, 151] x [-33, -34] - using abs=0.1 tolerance
+        # because centroid calculation uses triangulation, not simple average
+        assert incident.location.latitude == pytest.approx(-33.4, abs=0.1)
+        assert incident.location.longitude == pytest.approx(150.4, abs=0.1)

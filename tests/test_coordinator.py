@@ -3115,10 +3115,12 @@ class TestContainmentEvents:
 
         # First refresh - outside polygon
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert len(entered_events) == 0  # No enter event on first refresh
 
         # Second refresh - now inside polygon
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert len(entered_events) == 1
 
         # Verify event data
@@ -3252,6 +3254,7 @@ class TestContainmentEvents:
 
         # First refresh - no events should fire
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
 
         assert len(entered_events) == 0
         assert len(inside_events) == 0
@@ -3285,7 +3288,9 @@ class TestContainmentEvents:
 
         # Multiple refreshes - no containment events for state mode
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
 
         assert len(all_events) == 0
 
@@ -3318,7 +3323,9 @@ class TestContainmentEvents:
         hass.bus.async_listen("abc_emergency_entered_polygon", lambda e: entered_events.append(e))
 
         await coordinator.async_refresh()  # Outside
+        await hass.async_block_till_done()
         await coordinator.async_refresh()  # Inside
+        await hass.async_block_till_done()
 
         assert len(entered_events) == 1
         event_data = entered_events[0].data
@@ -3518,6 +3525,7 @@ class TestContainmentEventsPersonMode:
 
         # First refresh - outside
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert len(entered_events) == 0
 
         # Move person into polygon
@@ -3532,6 +3540,7 @@ class TestContainmentEventsPersonMode:
 
         # Second refresh - now inside
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert len(entered_events) == 1
         assert entered_events[0].data["instance_type"] == "person"
 
@@ -3570,12 +3579,14 @@ class TestContainmentEventsPersonMode:
 
         # First refresh - inside
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
 
         # Make location unknown
         hass.states.async_set("person.troy", "unknown", {})
 
         # Second refresh - location unknown
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
 
         # Should NOT fire exit event when location becomes unknown
         assert len(exited_events) == 0

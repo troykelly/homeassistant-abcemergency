@@ -46,12 +46,6 @@ blueprint:
         device:
           filter:
             - integration: mobile_app
-    enable_critical_alerts:
-      name: Enable Critical Alerts
-      description: Allow Emergency Warning notifications to bypass Do Not Disturb
-      default: true
-      selector:
-        boolean:
 
 trigger:
   - platform: state
@@ -67,6 +61,11 @@ trigger:
     to: "on"
     id: emergency_warning
 
+variables:
+  nearest_sensor: !input nearest_incident_sensor
+  emergency_sensor: !input emergency_warning_sensor
+  watch_sensor: !input watch_and_act_sensor
+
 action:
   - choose:
       - conditions:
@@ -78,10 +77,10 @@ action:
             type: notify
             title: "EMERGENCY WARNING"
             message: >
-              ACT IMMEDIATELY! {{ state_attr(states['!input nearest_incident_sensor'].entity_id, 'headline') }}
-              is {{ states(states['!input nearest_incident_sensor'].entity_id) }}km away
+              ACT IMMEDIATELY! {{ state_attr(nearest_sensor, 'headline') }}
+              is {{ states(nearest_sensor) }}km away
             data:
-              priority: "{{ 'critical' if !input enable_critical_alerts else 'high' }}"
+              priority: critical
               ttl: 0
               channel: alarm_stream
       - conditions:
@@ -96,8 +95,8 @@ action:
             type: notify
             title: "WATCH AND ACT"
             message: >
-              Take action now! {{ state_attr(states['!input nearest_incident_sensor'].entity_id, 'headline') }}
-              is {{ states(states['!input nearest_incident_sensor'].entity_id) }}km away
+              Take action now! {{ state_attr(nearest_sensor, 'headline') }}
+              is {{ states(nearest_sensor) }}km away
             data:
               priority: high
               ttl: 0
@@ -114,5 +113,5 @@ action:
             type: notify
             title: "Emergency Advice"
             message: >
-              {{ state_attr(states['!input nearest_incident_sensor'].entity_id, 'headline') }}
-              ({{ states(states['!input nearest_incident_sensor'].entity_id) }}km away)
+              {{ state_attr(nearest_sensor, 'headline') }}
+              ({{ states(nearest_sensor) }}km away)

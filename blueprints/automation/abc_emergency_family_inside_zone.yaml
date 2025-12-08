@@ -1,63 +1,62 @@
 blueprint:
   name: ABC Emergency - Family Member Inside Zone
   description: >
-    Alert the family when any tracked family member enters an emergency zone.
+    Alert when a tracked family member enters an emergency zone.
     Requires Person mode instances set up for each family member you want to track.
     This helps keep the whole family informed about each other's safety.
   domain: automation
   source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_family_inside_zone.yaml
   input:
-    family_member_sensors:
-      name: Family Member Inside Polygon Sensors
+    family_member_sensor:
+      name: Family Member Inside Polygon Sensor
       description: >
-        Select all family member inside_polygon sensors to monitor.
-        These should be Person mode instances
+        Select a family member's inside_polygon sensor to monitor.
+        This should be a Person mode instance
         (e.g., binary_sensor.abc_emergency_mum_inside_polygon)
       selector:
         entity:
           filter:
             - integration: abcemergency
               domain: binary_sensor
-          multiple: true
-    notify_target:
-      name: Notification Target
-      description: The notify service to use (e.g., notify.family_group or notify.mobile_app_phone)
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send notifications to
       selector:
-        text:
-          type: text
-    critical_for_emergency_warning:
-      name: Critical Alert for Emergency Warning
-      description: Use critical priority when family member enters Emergency Warning zone
-      default: true
-      selector:
-        boolean:
+        device:
+          filter:
+            - integration: mobile_app
 
 trigger:
   - platform: state
-    entity_id: !input family_member_sensors
+    entity_id: !input family_member_sensor
     to: "on"
 
+variables:
+  sensor_entity: !input family_member_sensor
+
 action:
-  - service: "{{ !input notify_target }}"
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: >
+      {% set name = sensor_entity | replace('binary_sensor.abc_emergency_', '') | replace('_inside_polygon', '') | replace('_', ' ') | title %}
+      {% set level = state_attr(sensor_entity, 'highest_alert_level') %}
+      {% if level == 'extreme' %}
+      FAMILY MEMBER IN DANGER: {{ name }}
+      {% else %}
+      Family Member in Emergency Zone: {{ name }}
+      {% endif %}
+    message: >
+      {% set name = sensor_entity | replace('binary_sensor.abc_emergency_', '') | replace('_inside_polygon', '') | replace('_', ' ') | title %}
+      {% set incidents = state_attr(sensor_entity, 'incidents') %}
+      {{ name }} has entered an emergency zone.
+
+      {% if incidents %}
+      {{ incidents[0].headline }} ({{ incidents[0].alert_text }})
+      {% endif %}
     data:
-      title: >
-        {% set name = trigger.entity_id | replace('binary_sensor.abc_emergency_', '') | replace('_inside_polygon', '') | replace('_', ' ') | title %}
-        {% set level = state_attr(trigger.entity_id, 'highest_alert_level') %}
-        {% if level == 'extreme' %}
-        FAMILY MEMBER IN DANGER ZONE: {{ name }}
-        {% else %}
-        Family Member in Emergency Zone: {{ name }}
-        {% endif %}
-      message: >
-        {% set name = trigger.entity_id | replace('binary_sensor.abc_emergency_', '') | replace('_inside_polygon', '') | replace('_', ' ') | title %}
-        {% set incidents = state_attr(trigger.entity_id, 'incidents') %}
-        {{ name }} has entered an emergency zone.
-        {% if incidents %}
-        {{ incidents[0].headline }} ({{ incidents[0].alert_text }})
-        {% endif %}
-      data:
-        priority: >
-          {% set level = state_attr(trigger.entity_id, 'highest_alert_level') %}
-          {% if level == 'extreme' and !input critical_for_emergency_warning %}critical
-          {% elif level in ['extreme', 'severe'] %}high
-          {% else %}normal{% endif %}
+      priority: >
+        {% set level = state_attr(sensor_entity, 'highest_alert_level') %}
+        {% if level == 'extreme' %}critical
+        {% elif level == 'severe' %}high
+        {% else %}normal{% endif %}

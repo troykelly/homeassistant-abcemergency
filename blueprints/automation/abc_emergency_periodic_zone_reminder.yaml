@@ -3,19 +3,17 @@ blueprint:
   description: >
     Send periodic reminders while you remain inside an emergency zone.
     The integration fires abc_emergency_inside_polygon events on each update
-    (every 5 minutes). This blueprint limits reminders to a configurable
-    interval to avoid alert fatigue.
+    (every 5 minutes). This blueprint sends reminders for serious alerts only.
   domain: automation
   source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_periodic_zone_reminder.yaml
   input:
-    instance_filter:
-      name: Instance Name Filter (Optional)
-      description: >
-        Only trigger for events from this instance name (e.g., "ABC Emergency (Home)").
-        Leave empty to trigger for all instances.
-      default: ""
+    notify_device:
+      name: Notification Device
+      description: The mobile device to send reminders to
       selector:
-        text:
+        device:
+          filter:
+            - integration: mobile_app
     minimum_alert_level:
       name: Minimum Alert Level for Reminders
       description: Only remind for this alert level or higher
@@ -29,50 +27,24 @@ blueprint:
               value: "severe"
             - label: "Any warning level"
               value: "moderate"
-    reminder_interval_minutes:
-      name: Reminder Interval (Minutes)
-      description: >
-        How often to send reminders. Integration updates every 5 minutes,
-        so set this to a multiple of 5 (e.g., 15, 30, 60).
-      default: 15
-      selector:
-        number:
-          min: 5
-          max: 120
-          step: 5
-          unit_of_measurement: minutes
-    notify_device:
-      name: Notification Device
-      description: The mobile device to send reminders to
-      selector:
-        device:
-          filter:
-            - integration: mobile_app
 
 trigger:
   - platform: event
     event_type: abc_emergency_inside_polygon
 
+variables:
+  min_level: !input minimum_alert_level
+  level_priority:
+    extreme: 3
+    severe: 2
+    moderate: 1
+    minor: 0
+
 condition:
-  # Instance filter
+  # Alert level filter - only trigger for configured level or higher
   - condition: template
     value_template: >
-      {% set filter = '!input instance_filter' %}
-      {{ filter == '' or trigger.event.data.instance_name == filter }}
-
-  # Alert level filter
-  - condition: template
-    value_template: >
-      {% set min_level = '!input minimum_alert_level' %}
-      {% set current = trigger.event.data.alert_level %}
-      {% set levels = {'extreme': 3, 'severe': 2, 'moderate': 1, 'minor': 0} %}
-      {{ levels.get(current, 0) >= levels.get(min_level, 0) }}
-
-  # Time-based throttling
-  - condition: template
-    value_template: >
-      {% set interval = !input reminder_interval_minutes %}
-      {{ now().minute | int % interval < 5 }}
+      {{ level_priority.get(trigger.event.data.alert_level, 0) >= level_priority.get(min_level, 0) }}
 
 action:
   - device_id: !input notify_device
@@ -86,7 +58,9 @@ action:
       {% endif %}
     message: >
       Reminder: You are still inside {{ trigger.event.data.headline }}.
+
       Alert level: {{ trigger.event.data.alert_text }}
+
       Continue to monitor conditions.
     data:
       priority: >

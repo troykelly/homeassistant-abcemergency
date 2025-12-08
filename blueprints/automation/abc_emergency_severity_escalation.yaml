@@ -7,14 +7,6 @@ blueprint:
   domain: automation
   source_url: https://github.com/troykelly/homeassistant-abcemergency/blob/main/blueprints/automation/abc_emergency_severity_escalation.yaml
   input:
-    instance_filter:
-      name: Instance Name Filter (Optional)
-      description: >
-        Only trigger for events from this instance name (e.g., "ABC Emergency (Home)").
-        Leave empty to trigger for all instances.
-      default: ""
-      selector:
-        text:
     notify_device:
       name: Notification Device
       description: The mobile device to send notifications to
@@ -22,12 +14,6 @@ blueprint:
         device:
           filter:
             - integration: mobile_app
-    enable_critical_alert:
-      name: Enable Critical Alert
-      description: Use critical priority (bypass DND) for escalation alerts
-      default: true
-      selector:
-        boolean:
     notify_deescalation:
       name: Also Notify on De-escalation
       description: Send a notification when alerts are reduced (good news)
@@ -39,11 +25,8 @@ trigger:
   - platform: event
     event_type: abc_emergency_containment_severity_changed
 
-condition:
-  - condition: template
-    value_template: >
-      {% set filter = '!input instance_filter' %}
-      {{ filter == '' or trigger.event.data.instance_name == filter }}
+variables:
+  notify_deescalation_var: !input notify_deescalation
 
 action:
   - choose:
@@ -58,17 +41,19 @@ action:
             title: "ALERT LEVEL INCREASED"
             message: >
               {{ trigger.event.data.headline }} has ESCALATED!
+
               {{ trigger.event.data.previous_alert_text }} to {{ trigger.event.data.new_alert_text }}
+
               TAKE ACTION NOW!
             data:
-              priority: "{{ 'critical' if !input enable_critical_alert else 'high' }}"
+              priority: critical
               ttl: 0
               channel: alarm_stream
 
       # De-escalation - good news (if enabled)
       - conditions:
           - condition: template
-            value_template: "{{ trigger.event.data.escalated == false and !input notify_deescalation }}"
+            value_template: "{{ trigger.event.data.escalated == false and notify_deescalation_var }}"
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
@@ -77,4 +62,5 @@ action:
             message: >
               {{ trigger.event.data.headline }} has de-escalated from
               {{ trigger.event.data.previous_alert_text }} to {{ trigger.event.data.new_alert_text }}.
+
               Continue to monitor conditions.

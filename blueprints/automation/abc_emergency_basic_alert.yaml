@@ -35,12 +35,14 @@ trigger:
     entity_id: !input abc_emergency_binary_sensor
     to: "on"
 
+variables:
+  nearest_sensor: !input abc_emergency_nearest_sensor
+
 action:
   - device_id: !input notify_device
     domain: mobile_app
     type: notify
     title: "Emergency Alert"
     message: >
-      {% set sensor = '!input abc_emergency_nearest_sensor' %}
-      {{ state_attr(sensor, 'headline') | default('Emergency incident detected') }}
-      ({{ states(sensor) | default('unknown') }}km away)
+      {{ state_attr(nearest_sensor, 'headline') | default('Emergency incident detected') }}
+      ({{ states(nearest_sensor) | default('unknown') }}km away)

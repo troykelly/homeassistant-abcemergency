@@ -1,18 +1,21 @@
 """Geospatial helper functions for ABC Emergency.
 
 This module provides point-in-polygon detection for containment checking
-of emergency incident zones.
+of emergency incident zones. Uses Shapely's prepared geometries for
+efficient repeated containment checks.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from shapely.geometry import Point, Polygon  # type: ignore[import-untyped]
+from shapely.geometry import Point, Polygon
+from shapely.prepared import prep
 
 if TYPE_CHECKING:
     from .const import StoredPolygon
+    from .models import EmergencyIncident
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,12 +38,62 @@ def stored_polygon_to_shapely(poly_data: StoredPolygon) -> Polygon:
     return Polygon(shell, holes)
 
 
+def _build_prepared_polygons(polygons: list[StoredPolygon]) -> list[Any]:
+    """Build prepared Shapely polygon objects for efficient containment checks.
+
+    Args:
+        polygons: List of stored polygon data.
+
+    Returns:
+        List of prepared Shapely geometries (PreparedGeometry objects).
+    """
+    prepared = []
+    for poly_data in polygons:
+        try:
+            polygon = stored_polygon_to_shapely(poly_data)
+            if polygon.is_valid:
+                prepared.append(prep(polygon))
+        except Exception:
+            # Skip malformed polygons
+            _LOGGER.debug("Skipping malformed polygon during preparation")
+            continue
+    return prepared
+
+
+def get_prepared_polygons(incident: EmergencyIncident) -> list[Any]:
+    """Get prepared Shapely polygons for an incident, creating cache if needed.
+
+    This function lazily creates and caches prepared polygon geometries on
+    the incident object for efficient repeated containment checks.
+
+    Args:
+        incident: Emergency incident to get prepared polygons for.
+
+    Returns:
+        List of prepared Shapely geometries. Empty list if no valid polygons.
+    """
+    # Return cached if available
+    if incident._prepared_polygons is not None:
+        return incident._prepared_polygons
+
+    # Build and cache prepared polygons
+    if incident.polygons:
+        incident._prepared_polygons = _build_prepared_polygons(incident.polygons)
+    else:
+        incident._prepared_polygons = []
+
+    return incident._prepared_polygons
+
+
 def point_in_polygons(
     latitude: float,
     longitude: float,
     polygons: list[StoredPolygon] | None,
 ) -> bool:
     """Check if a geographic point is inside any of the given polygons.
+
+    Note: For repeated checks on the same incident, prefer using
+    point_in_incident() which uses cached prepared geometries.
 
     Args:
         latitude: Point latitude (y-coordinate).
@@ -63,6 +116,44 @@ def point_in_polygons(
         except Exception:
             # Skip malformed polygons - log but don't crash
             _LOGGER.debug("Skipping malformed polygon during containment check")
+            continue
+
+    return False
+
+
+def point_in_incident(
+    latitude: float,
+    longitude: float,
+    incident: EmergencyIncident,
+) -> bool:
+    """Check if a geographic point is inside an incident's polygons.
+
+    This function uses cached prepared geometries for efficient repeated
+    containment checks on the same incident.
+
+    Args:
+        latitude: Point latitude (y-coordinate).
+        longitude: Point longitude (x-coordinate).
+        incident: Emergency incident to check against.
+
+    Returns:
+        True if point is inside any of the incident's polygons, False otherwise.
+    """
+    if not incident.has_polygon:
+        return False
+
+    prepared_polys = get_prepared_polygons(incident)
+    if not prepared_polys:
+        return False
+
+    point = Point(longitude, latitude)  # Shapely: (x, y) = (lon, lat)
+
+    for prepared in prepared_polys:
+        try:
+            if prepared.contains(point):
+                return True
+        except Exception:
+            _LOGGER.debug("Error during prepared geometry containment check")
             continue
 
     return False

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from custom_components.abcemergency.const import StoredPolygon
 from custom_components.abcemergency.helpers_geo import (
+    get_prepared_polygons,
+    point_in_incident,
     point_in_polygons,
     stored_polygon_to_shapely,
 )
+from custom_components.abcemergency.models import Coordinate, EmergencyIncident
 
 
 class TestStoredPolygonToShapely:
@@ -277,6 +282,248 @@ class TestPerformance:
 
         assert result is False
         assert elapsed < 1.0, f"Multiple polygon check took {elapsed:.3f}s"
+
+
+class TestGetPreparedPolygons:
+    """Test prepared polygon caching."""
+
+    def test_caches_prepared_polygons(self) -> None:
+        """Prepared polygons are cached on first call."""
+        incident = EmergencyIncident(
+            id="test-1",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                {
+                    "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+                    "inner_rings": None,
+                }
+            ],
+            has_polygon=True,
+        )
+
+        # First call builds cache
+        prepared1 = get_prepared_polygons(incident)
+        assert len(prepared1) == 1
+        assert incident._prepared_polygons is not None
+
+        # Second call returns cached
+        prepared2 = get_prepared_polygons(incident)
+        assert prepared1 is prepared2  # Same object reference
+
+    def test_empty_polygons_returns_empty_list(self) -> None:
+        """Incident with no polygons returns empty list."""
+        incident = EmergencyIncident(
+            id="test-2",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=None,
+            has_polygon=False,
+        )
+
+        prepared = get_prepared_polygons(incident)
+        assert prepared == []
+        assert incident._prepared_polygons == []
+
+    def test_skips_invalid_polygons(self) -> None:
+        """Invalid polygons are skipped during preparation."""
+        incident = EmergencyIncident(
+            id="test-3",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                # Valid polygon
+                {
+                    "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+                    "inner_rings": None,
+                },
+                # Invalid self-intersecting polygon (bowtie)
+                {
+                    "outer_ring": [
+                        [0.0, 0.0],
+                        [10.0, 10.0],
+                        [10.0, 0.0],
+                        [0.0, 10.0],
+                        [0.0, 0.0],
+                    ],
+                    "inner_rings": None,
+                },
+            ],
+            has_polygon=True,
+        )
+
+        prepared = get_prepared_polygons(incident)
+        # Only the valid polygon should be included
+        assert len(prepared) == 1
+
+
+class TestPointInIncident:
+    """Test point_in_incident with cached prepared geometries."""
+
+    def test_point_inside_incident_polygon(self) -> None:
+        """Point inside incident polygon returns True."""
+        incident = EmergencyIncident(
+            id="test-1",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                {
+                    "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+                    "inner_rings": None,
+                }
+            ],
+            has_polygon=True,
+        )
+
+        assert point_in_incident(5.0, 5.0, incident) is True
+
+    def test_point_outside_incident_polygon(self) -> None:
+        """Point outside incident polygon returns False."""
+        incident = EmergencyIncident(
+            id="test-2",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                {
+                    "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+                    "inner_rings": None,
+                }
+            ],
+            has_polygon=True,
+        )
+
+        assert point_in_incident(15.0, 5.0, incident) is False
+
+    def test_incident_without_polygon(self) -> None:
+        """Incident without polygon returns False."""
+        incident = EmergencyIncident(
+            id="test-3",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=None,
+            has_polygon=False,
+        )
+
+        assert point_in_incident(5.0, 5.0, incident) is False
+
+    def test_uses_cached_prepared_polygons(self) -> None:
+        """point_in_incident uses cached prepared geometries."""
+        incident = EmergencyIncident(
+            id="test-4",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                {
+                    "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+                    "inner_rings": None,
+                }
+            ],
+            has_polygon=True,
+        )
+
+        # Cache should be None initially
+        assert incident._prepared_polygons is None
+
+        # First call should build cache
+        point_in_incident(5.0, 5.0, incident)
+        assert incident._prepared_polygons is not None
+        cached = incident._prepared_polygons
+
+        # Second call should use same cache
+        point_in_incident(15.0, 5.0, incident)
+        assert incident._prepared_polygons is cached
+
+    def test_point_in_hole_returns_false(self) -> None:
+        """Point inside hole of polygon returns False."""
+        incident = EmergencyIncident(
+            id="test-5",
+            headline="Test Incident",
+            alert_level="moderate",
+            alert_text="Advice",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Going",
+            size="10 ha",
+            source="Test Service",
+            location=Coordinate(latitude=-33.8688, longitude=151.2093),
+            updated=datetime.now(UTC),
+            polygons=[
+                {
+                    "outer_ring": [
+                        [0.0, 0.0],
+                        [20.0, 0.0],
+                        [20.0, 20.0],
+                        [0.0, 20.0],
+                        [0.0, 0.0],
+                    ],
+                    "inner_rings": [
+                        [[5.0, 5.0], [15.0, 5.0], [15.0, 15.0], [5.0, 15.0], [5.0, 5.0]],
+                    ],
+                }
+            ],
+            has_polygon=True,
+        )
+
+        # Point in hole
+        assert point_in_incident(10.0, 10.0, incident) is False
+        # Point in polygon but outside hole
+        assert point_in_incident(2.0, 2.0, incident) is True
 
 
 class TestRealWorldCoordinates:

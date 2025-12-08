@@ -472,3 +472,32 @@ class LocationSearchResponse(TypedDict):
     """Response from /locationSearch endpoint."""
 
     locations: LocationResults
+
+
+# Stored polygon TypedDicts for point-in-polygon containment detection
+
+
+class StoredPolygon(TypedDict):
+    """Stored polygon geometry for point-in-polygon testing.
+
+    Follows GeoJSON coordinate order: [longitude, latitude].
+
+    Attributes:
+        outer_ring: The outer boundary of the polygon as [[lon, lat], ...].
+        inner_rings: Optional list of hole boundaries (exclusion zones).
+    """
+
+    outer_ring: list[list[float]]
+    inner_rings: list[list[list[float]]] | None
+
+
+class StoredGeometry(TypedDict):
+    """Complete geometry data stored for an incident.
+
+    Attributes:
+        type: The geometry type (Point, Polygon, MultiPolygon).
+        polygons: List of polygons for containment testing (None for Point).
+    """
+
+    type: Literal["Point", "Polygon", "MultiPolygon"]
+    polygons: list[StoredPolygon] | None

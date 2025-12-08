@@ -25,6 +25,8 @@ from custom_components.abcemergency.const import (
     FeatureProperties,
     PointGeometry,
     PolygonGeometry,
+    StoredGeometry,
+    StoredPolygon,
 )
 
 
@@ -286,3 +288,94 @@ class TestFeatureTypedDicts:
             },
         }
         assert data["type"] == "Feature"
+
+
+class TestStoredPolygonTypeDicts:
+    """Test StoredPolygon and StoredGeometry TypedDict structures."""
+
+    def test_stored_polygon_with_outer_ring_only(self) -> None:
+        """Test StoredPolygon with just an outer boundary."""
+        polygon: StoredPolygon = {
+            "outer_ring": [
+                [151.0, -33.0],
+                [152.0, -33.0],
+                [152.0, -34.0],
+                [151.0, -34.0],
+                [151.0, -33.0],
+            ],
+            "inner_rings": None,
+        }
+        assert len(polygon["outer_ring"]) == 5
+        assert polygon["inner_rings"] is None
+
+    def test_stored_polygon_with_holes(self) -> None:
+        """Test StoredPolygon with inner rings (holes)."""
+        polygon: StoredPolygon = {
+            "outer_ring": [
+                [150.0, -32.0],
+                [153.0, -32.0],
+                [153.0, -35.0],
+                [150.0, -35.0],
+                [150.0, -32.0],
+            ],
+            "inner_rings": [
+                [  # First hole
+                    [151.0, -33.0],
+                    [152.0, -33.0],
+                    [152.0, -34.0],
+                    [151.0, -34.0],
+                    [151.0, -33.0],
+                ],
+            ],
+        }
+        assert len(polygon["outer_ring"]) == 5
+        assert polygon["inner_rings"] is not None
+        assert len(polygon["inner_rings"]) == 1
+
+    def test_stored_geometry_point(self) -> None:
+        """Test StoredGeometry for Point type."""
+        geometry: StoredGeometry = {
+            "type": "Point",
+            "polygons": None,
+        }
+        assert geometry["type"] == "Point"
+        assert geometry["polygons"] is None
+
+    def test_stored_geometry_polygon(self) -> None:
+        """Test StoredGeometry for Polygon type."""
+        geometry: StoredGeometry = {
+            "type": "Polygon",
+            "polygons": [
+                {
+                    "outer_ring": [
+                        [151.0, -33.0],
+                        [152.0, -33.0],
+                        [152.0, -34.0],
+                        [151.0, -33.0],
+                    ],
+                    "inner_rings": None,
+                }
+            ],
+        }
+        assert geometry["type"] == "Polygon"
+        assert geometry["polygons"] is not None
+        assert len(geometry["polygons"]) == 1
+
+    def test_stored_geometry_multipolygon(self) -> None:
+        """Test StoredGeometry for MultiPolygon type."""
+        geometry: StoredGeometry = {
+            "type": "MultiPolygon",
+            "polygons": [
+                {
+                    "outer_ring": [[150.0, -32.0], [151.0, -32.0], [150.5, -33.0], [150.0, -32.0]],
+                    "inner_rings": None,
+                },
+                {
+                    "outer_ring": [[152.0, -34.0], [153.0, -34.0], [152.5, -35.0], [152.0, -34.0]],
+                    "inner_rings": None,
+                },
+            ],
+        }
+        assert geometry["type"] == "MultiPolygon"
+        assert geometry["polygons"] is not None
+        assert len(geometry["polygons"]) == 2

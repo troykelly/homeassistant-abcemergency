@@ -165,6 +165,120 @@ class TestEdgeCases:
         assert point_in_polygons(5.0, 5.0, [polygon]) is False
 
 
+class TestBoundaryConditions:
+    """Test boundary and vertex edge cases."""
+
+    def test_point_on_polygon_boundary(self) -> None:
+        """Point exactly on polygon edge.
+
+        Note: Shapely's contains() returns False for boundary points.
+        This is implementation-specific behavior that we document here.
+        """
+        polygon: StoredPolygon = {
+            "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+            "inner_rings": None,
+        }
+        # Point on the left edge at (0, 5)
+        # Shapely's contains() returns False for boundary points
+        assert point_in_polygons(5.0, 0.0, [polygon]) is False
+
+    def test_point_at_polygon_vertex(self) -> None:
+        """Point exactly at a polygon vertex.
+
+        Note: Shapely's contains() returns False for vertex points.
+        """
+        polygon: StoredPolygon = {
+            "outer_ring": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]],
+            "inner_rings": None,
+        }
+        # Point at vertex (0, 0)
+        assert point_in_polygons(0.0, 0.0, [polygon]) is False
+
+    def test_self_intersecting_polygon_is_invalid(self) -> None:
+        """Self-intersecting (bowtie) polygon should be handled as invalid."""
+        # Creates a bowtie/figure-8 shape by crossing lines
+        bowtie: StoredPolygon = {
+            "outer_ring": [
+                [0.0, 0.0],
+                [10.0, 10.0],  # Cross to opposite corner
+                [10.0, 0.0],
+                [0.0, 10.0],  # Cross back
+                [0.0, 0.0],
+            ],
+            "inner_rings": None,
+        }
+        # Self-intersecting polygon is invalid, so point_in_polygons should
+        # return False because polygon.is_valid check fails
+        assert point_in_polygons(5.0, 5.0, [bowtie]) is False
+
+
+class TestPerformance:
+    """Performance tests for polygon operations."""
+
+    def test_performance_large_polygon(self) -> None:
+        """Check performance with polygon of many vertices.
+
+        This test ensures the containment check completes in reasonable time
+        for polygons with complex boundaries.
+        """
+        import math
+        import time
+
+        # Create a polygon with 1000+ vertices (a circle approximation)
+        num_points = 1000
+        radius = 10.0
+        center = (50.0, 50.0)
+
+        outer_ring: list[list[float]] = []
+        for i in range(num_points):
+            angle = (2 * math.pi * i) / num_points
+            x = center[0] + radius * math.cos(angle)
+            y = center[1] + radius * math.sin(angle)
+            outer_ring.append([x, y])
+        # Close the polygon
+        outer_ring.append(outer_ring[0])
+
+        large_polygon: StoredPolygon = {
+            "outer_ring": outer_ring,
+            "inner_rings": None,
+        }
+
+        # Test point inside
+        start = time.time()
+        result = point_in_polygons(center[1], center[0], [large_polygon])
+        elapsed = time.time() - start
+
+        assert result is True
+        # Should complete in well under 1 second
+        assert elapsed < 1.0, f"Large polygon check took {elapsed:.3f}s"
+
+    def test_multiple_large_polygons(self) -> None:
+        """Check performance with multiple polygons to check."""
+        import math
+        import time
+
+        # Create 10 polygons with 100 vertices each
+        polygons: list[StoredPolygon] = []
+        for j in range(10):
+            offset = j * 30
+            outer_ring: list[list[float]] = []
+            for i in range(100):
+                angle = (2 * math.pi * i) / 100
+                x = offset + 10.0 * math.cos(angle)
+                y = 10.0 * math.sin(angle)
+                outer_ring.append([x, y])
+            outer_ring.append(outer_ring[0])
+            polygons.append({"outer_ring": outer_ring, "inner_rings": None})
+
+        # Test point outside all polygons
+        start = time.time()
+        result = point_in_polygons(-100.0, -100.0, polygons)
+        elapsed = time.time() - start
+
+        assert result is False
+        assert elapsed < 1.0, f"Multiple polygon check took {elapsed:.3f}s"
+
+
 class TestRealWorldCoordinates:
     """Test with realistic Australian coordinates."""
 

@@ -152,7 +152,7 @@ class ABCEmergencyConfigFlow(ConfigFlow, domain=DOMAIN):
             except ABCEmergencyConnectionError:
                 errors["base"] = "cannot_connect"
             except ABCEmergencyAPIError:
-                errors["base"] = "cannot_connect"
+                errors["base"] = "api_error"
             except Exception:
                 _LOGGER.exception("Unexpected error during API test")
                 errors["base"] = "unknown"

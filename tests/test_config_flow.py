@@ -228,7 +228,7 @@ class TestConfigFlowStateStep:
             )
 
             assert result["type"] is FlowResultType.FORM
-            assert result["errors"] == {"base": "cannot_connect"}
+            assert result["errors"] == {"base": "api_error"}
 
     async def test_unexpected_error_shows_unknown(
         self,

@@ -151,6 +151,11 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._seen_incident_ids: set[str] = set()
         self._first_refresh: bool = True
 
+        # Containment tracking for enter/exit events
+        self._previously_containing_ids: set[str] = set()
+        self._previously_containing_incidents: dict[str, EmergencyIncident] = {}
+        self._first_containment_check: bool = True
+
         # Storage for persisting seen incident IDs
         self._store: Store[dict[str, list[str]]] = Store(
             hass,
@@ -232,6 +237,9 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
         # Detect new incidents and fire events
         await self._handle_new_incident_detection(data)
+
+        # Fire containment events for zone/person modes
+        self._fire_containment_events(data)
 
         return data
 
@@ -852,3 +860,173 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 incident.event_type,
                 incident.headline,
             )
+
+    def _fire_containment_events(self, data: CoordinatorData) -> None:
+        """Fire events for containment state changes.
+
+        Fires events when the monitored location enters, exits, or is inside
+        an emergency polygon. Only fires for zone/person modes.
+
+        Args:
+            data: The processed coordinator data.
+        """
+        # Skip containment events for state mode (no monitored point)
+        if self._instance_type == INSTANCE_TYPE_STATE:
+            return
+
+        # Handle first containment check - just populate state, don't fire events
+        if self._first_containment_check:
+            self._previously_containing_ids = {inc.id for inc in data.containing_incidents}
+            self._previously_containing_incidents = {
+                inc.id: inc for inc in data.containing_incidents
+            }
+            self._first_containment_check = False
+            return
+
+        # Handle person mode with unknown location - don't fire exit events
+        if self._instance_type == INSTANCE_TYPE_PERSON and not data.location_available:
+            # Clear tracking state but don't fire exit events
+            self._previously_containing_ids = set()
+            self._previously_containing_incidents = {}
+            return
+
+        # Get current containing incident IDs
+        current_containing_ids = {inc.id for inc in data.containing_incidents}
+
+        # Detect newly entered polygons
+        entered_ids = current_containing_ids - self._previously_containing_ids
+
+        # Detect exited polygons
+        exited_ids = self._previously_containing_ids - current_containing_ids
+
+        # Map current incident IDs to incidents
+        current_incident_map = {inc.id: inc for inc in data.incidents}
+
+        # Get monitored coordinates
+        monitored_lat = data.current_latitude
+        monitored_lon = data.current_longitude
+
+        # Fire entered events
+        for incident_id in entered_ids:
+            incident = current_incident_map.get(incident_id)
+            if incident:
+                self._fire_entered_polygon_event(incident, data, monitored_lat, monitored_lon)
+
+        # Fire exited events (use cached incident data for cleared incidents)
+        for incident_id in exited_ids:
+            incident = current_incident_map.get(
+                incident_id
+            ) or self._previously_containing_incidents.get(incident_id)
+            if incident:
+                self._fire_exited_polygon_event(incident, data, monitored_lat, monitored_lon)
+
+        # Fire inside events for all currently containing incidents
+        for incident in data.containing_incidents:
+            self._fire_inside_polygon_event(incident, data, monitored_lat, monitored_lon)
+
+        # Update tracking state for next cycle
+        self._previously_containing_ids = current_containing_ids
+        self._previously_containing_incidents = {inc.id: inc for inc in data.containing_incidents}
+
+    def _build_containment_event_data(
+        self,
+        incident: EmergencyIncident,
+        data: CoordinatorData,
+        monitored_lat: float | None,
+        monitored_lon: float | None,
+    ) -> dict[str, str | float | None]:
+        """Build event data for containment events.
+
+        Args:
+            incident: The incident that the point entered/exited/is inside.
+            data: The coordinator data.
+            monitored_lat: The monitored point latitude.
+            monitored_lon: The monitored point longitude.
+
+        Returns:
+            Dictionary of event data.
+        """
+        return {
+            "config_entry_id": self._entry.entry_id,
+            "instance_name": self._entry.title or "ABC Emergency",
+            "instance_type": self._instance_type,
+            "incident_id": incident.id,
+            "headline": incident.headline,
+            "event_type": incident.event_type,
+            "event_icon": incident.event_icon,
+            "alert_level": incident.alert_level,
+            "alert_text": incident.alert_text,
+            "latitude": incident.location.latitude,
+            "longitude": incident.location.longitude,
+            "monitored_latitude": monitored_lat,
+            "monitored_longitude": monitored_lon,
+            "status": incident.status,
+            "source": incident.source,
+            "updated": incident.updated.isoformat() if incident.updated else None,
+        }
+
+    def _fire_entered_polygon_event(
+        self,
+        incident: EmergencyIncident,
+        data: CoordinatorData,
+        monitored_lat: float | None,
+        monitored_lon: float | None,
+    ) -> None:
+        """Fire event when monitored point enters a polygon.
+
+        Args:
+            incident: The incident polygon that was entered.
+            data: The coordinator data.
+            monitored_lat: The monitored point latitude.
+            monitored_lon: The monitored point longitude.
+        """
+        event_data = self._build_containment_event_data(
+            incident, data, monitored_lat, monitored_lon
+        )
+        self.hass.bus.async_fire("abc_emergency_entered_polygon", event_data)
+        _LOGGER.info(
+            "Entered polygon: %s (%s)",
+            incident.headline,
+            incident.alert_text,
+        )
+
+    def _fire_exited_polygon_event(
+        self,
+        incident: EmergencyIncident,
+        data: CoordinatorData,
+        monitored_lat: float | None,
+        monitored_lon: float | None,
+    ) -> None:
+        """Fire event when monitored point exits a polygon.
+
+        Args:
+            incident: The incident polygon that was exited.
+            data: The coordinator data.
+            monitored_lat: The monitored point latitude.
+            monitored_lon: The monitored point longitude.
+        """
+        event_data = self._build_containment_event_data(
+            incident, data, monitored_lat, monitored_lon
+        )
+        self.hass.bus.async_fire("abc_emergency_exited_polygon", event_data)
+        _LOGGER.info("Exited polygon: %s", incident.headline)
+
+    def _fire_inside_polygon_event(
+        self,
+        incident: EmergencyIncident,
+        data: CoordinatorData,
+        monitored_lat: float | None,
+        monitored_lon: float | None,
+    ) -> None:
+        """Fire event while monitored point is inside a polygon.
+
+        Args:
+            incident: The incident polygon containing the point.
+            data: The coordinator data.
+            monitored_lat: The monitored point latitude.
+            monitored_lon: The monitored point longitude.
+        """
+        event_data = self._build_containment_event_data(
+            incident, data, monitored_lat, monitored_lon
+        )
+        self.hass.bus.async_fire("abc_emergency_inside_polygon", event_data)

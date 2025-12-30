@@ -1,0 +1,18 @@
+# Simple Map Card for ABC Emergency
+#
+# Add this to any Lovelace dashboard to display emergency incidents on a map.
+# Replace "ABC Emergency (Treehouse)" with your config entry title.
+#
+# To find your source name:
+# 1. Go to Settings > Devices & Services > ABC Emergency
+# 2. The source name is your integration title (e.g., "ABC Emergency (Sydney)")
+
+type: map
+title: Emergency Incidents
+geo_location_sources:
+  - "ABC Emergency (Treehouse)"
+default_zoom: 10
+dark_mode: false
+theme_mode: auto
+hours_to_show: 24
+aspect_ratio: 16:9

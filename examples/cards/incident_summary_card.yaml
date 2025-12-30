@@ -1,0 +1,40 @@
+# Incident Summary Card for ABC Emergency
+#
+# Shows a quick overview of incident counts and nearest incident.
+# Replace "treehouse" with your zone name (lowercase, underscores for spaces)
+
+type: entities
+title: Emergency Summary
+show_header_toggle: false
+entities:
+  - entity: sensor.abc_emergency_treehouse_total_incidents
+    name: Total Incidents
+    icon: mdi:map-marker-multiple
+
+  - entity: sensor.abc_emergency_treehouse_nearby_incidents
+    name: Nearby Incidents
+    icon: mdi:map-marker-radius
+
+  - type: divider
+
+  - entity: sensor.abc_emergency_treehouse_bushfires
+    name: Bushfires
+    icon: mdi:fire
+
+  - entity: sensor.abc_emergency_treehouse_floods
+    name: Floods
+    icon: mdi:water
+
+  - entity: sensor.abc_emergency_treehouse_storms
+    name: Storms
+    icon: mdi:weather-lightning
+
+  - type: divider
+
+  - entity: sensor.abc_emergency_treehouse_nearest_incident
+    name: Nearest Distance (km)
+    icon: mdi:map-marker-distance
+
+  - entity: sensor.abc_emergency_treehouse_highest_alert_level
+    name: Highest Alert Level
+    icon: mdi:alert-decagram

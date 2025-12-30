@@ -1,0 +1,50 @@
+# Alert Status Card for ABC Emergency
+#
+# Displays the current alert level with color-coded tiles.
+# Shows emergency warning (red), watch and act (orange), or advice (yellow).
+#
+# Replace "treehouse" with your zone name (lowercase, underscores for spaces)
+
+type: vertical-stack
+title: Alert Status
+cards:
+  - type: horizontal-stack
+    cards:
+      - type: tile
+        entity: binary_sensor.abc_emergency_treehouse_emergency_warning
+        name: Emergency
+        icon: mdi:alert-octagon
+        color: red
+
+      - type: tile
+        entity: binary_sensor.abc_emergency_treehouse_watch_and_act
+        name: Watch & Act
+        icon: mdi:alert
+        color: orange
+
+      - type: tile
+        entity: binary_sensor.abc_emergency_treehouse_advice
+        name: Advice
+        icon: mdi:information
+        color: amber
+
+  - type: markdown
+    content: |
+      {% set sensor = 'sensor.abc_emergency_treehouse_nearest_incident' %}
+      {% if is_state('binary_sensor.abc_emergency_treehouse_emergency_warning', 'on') %}
+      ## EMERGENCY WARNING
+      **Immediate action required!**
+      {% elif is_state('binary_sensor.abc_emergency_treehouse_watch_and_act', 'on') %}
+      ## WATCH AND ACT
+      **Conditions are changing. Be ready to act.**
+      {% elif is_state('binary_sensor.abc_emergency_treehouse_advice', 'on') %}
+      ## ADVICE
+      **An incident has started. Stay informed.**
+      {% else %}
+      ## ALL CLEAR
+      No active alerts in your monitored area.
+      {% endif %}
+
+      {% if states(sensor) != 'unknown' and states(sensor) != 'unavailable' %}
+      **Nearest:** {{ state_attr(sensor, 'headline') }} - {{ states(sensor) }} km {{ state_attr(sensor, 'direction') }}
+      {% endif %}

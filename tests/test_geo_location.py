@@ -235,6 +235,217 @@ class TestABCEmergencyGeolocationEvent:
 
         assert "size" not in attrs
 
+    def test_extra_state_attributes_no_geojson_for_point_only(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_point_only: EmergencyIncident,
+    ) -> None:
+        """Test that geojson is not included for point-only incidents."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_point_only)
+
+        attrs = event.extra_state_attributes
+
+        assert "geojson" not in attrs
+
+    def test_extra_state_attributes_no_geojson_when_no_polygon_data(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test that geojson is not included when incident has no polygon data."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_bushfire)
+
+        attrs = event.extra_state_attributes
+
+        # Default mock_incident_bushfire has no polygon data
+        assert "geojson" not in attrs
+
+    def test_extra_state_attributes_with_single_polygon(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_with_single_polygon: EmergencyIncident,
+    ) -> None:
+        """Test that geojson is included with correct Polygon format."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_with_single_polygon)
+
+        attrs = event.extra_state_attributes
+
+        assert "geojson" in attrs
+        geojson = attrs["geojson"]
+        assert geojson["type"] == "Polygon"
+        assert len(geojson["coordinates"]) == 1  # Just outer ring
+        assert geojson["coordinates"][0] == [
+            [151.2, -33.8],
+            [151.3, -33.8],
+            [151.3, -33.9],
+            [151.2, -33.9],
+            [151.2, -33.8],
+        ]
+
+    def test_extra_state_attributes_with_polygon_and_hole(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_with_polygon_and_hole: EmergencyIncident,
+    ) -> None:
+        """Test that geojson includes inner rings (holes)."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_with_polygon_and_hole)
+
+        attrs = event.extra_state_attributes
+
+        assert "geojson" in attrs
+        geojson = attrs["geojson"]
+        assert geojson["type"] == "Polygon"
+        assert len(geojson["coordinates"]) == 2  # Outer ring + 1 hole
+        # First ring is outer boundary
+        assert geojson["coordinates"][0] == [
+            [151.0, -33.7],
+            [151.4, -33.7],
+            [151.4, -34.0],
+            [151.0, -34.0],
+            [151.0, -33.7],
+        ]
+        # Second ring is the hole
+        assert geojson["coordinates"][1] == [
+            [151.15, -33.8],
+            [151.25, -33.8],
+            [151.25, -33.9],
+            [151.15, -33.9],
+            [151.15, -33.8],
+        ]
+
+    def test_extra_state_attributes_with_multipolygon(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_with_multipolygon: EmergencyIncident,
+    ) -> None:
+        """Test that geojson uses MultiPolygon format for multiple polygons."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_with_multipolygon)
+
+        attrs = event.extra_state_attributes
+
+        assert "geojson" in attrs
+        geojson = attrs["geojson"]
+        assert geojson["type"] == "MultiPolygon"
+        assert len(geojson["coordinates"]) == 2  # Two polygons
+        # First polygon
+        assert geojson["coordinates"][0] == [
+            [
+                [151.2, -33.8],
+                [151.3, -33.8],
+                [151.3, -33.9],
+                [151.2, -33.9],
+                [151.2, -33.8],
+            ]
+        ]
+        # Second polygon
+        assert geojson["coordinates"][1] == [
+            [
+                [151.4, -33.7],
+                [151.5, -33.7],
+                [151.5, -33.8],
+                [151.4, -33.8],
+                [151.4, -33.7],
+            ]
+        ]
+
+    def test_extra_state_attributes_geojson_with_geometry_type(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_with_single_polygon: EmergencyIncident,
+    ) -> None:
+        """Test that geometry_type attribute is also exposed."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_with_single_polygon)
+
+        attrs = event.extra_state_attributes
+
+        assert attrs.get("geometry_type") == "Polygon"
+
+    def test_extra_state_attributes_has_polygon_true(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_with_single_polygon: EmergencyIncident,
+    ) -> None:
+        """Test that has_polygon attribute is exposed when true."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_with_single_polygon)
+
+        attrs = event.extra_state_attributes
+
+        assert attrs.get("has_polygon") is True
+
+    def test_extra_state_attributes_has_polygon_false(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_point_only: EmergencyIncident,
+    ) -> None:
+        """Test that has_polygon attribute is exposed when false."""
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_point_only)
+
+        attrs = event.extra_state_attributes
+
+        assert attrs.get("has_polygon") is False
+
+    def test_extra_state_attributes_multipolygon_with_holes(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_with_multipolygon_and_holes: EmergencyIncident,
+    ) -> None:
+        """Test MultiPolygon with inner rings in some polygons."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_with_multipolygon_and_holes
+        )
+
+        attrs = event.extra_state_attributes
+
+        assert "geojson" in attrs
+        geojson = attrs["geojson"]
+        assert geojson["type"] == "MultiPolygon"
+        assert len(geojson["coordinates"]) == 2
+
+        # First polygon has an inner ring (hole)
+        first_poly = geojson["coordinates"][0]
+        assert len(first_poly) == 2  # outer + 1 hole
+        assert first_poly[1] == [
+            [151.22, -33.82],
+            [151.28, -33.82],
+            [151.28, -33.88],
+            [151.22, -33.88],
+            [151.22, -33.82],
+        ]
+
+        # Second polygon has no inner rings
+        second_poly = geojson["coordinates"][1]
+        assert len(second_poly) == 1  # just outer ring
+
+    def test_extra_state_attributes_no_geojson_when_empty_polygon_list(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_has_polygon_but_empty_list: EmergencyIncident,
+    ) -> None:
+        """Test that geojson is not included when polygons list is empty."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_has_polygon_but_empty_list
+        )
+
+        attrs = event.extra_state_attributes
+
+        # has_polygon may be True but geojson should not be present if list is empty
+        assert "geojson" not in attrs
+
+    def test_build_geojson_returns_none_for_empty_polygon_list(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_has_polygon_but_empty_list: EmergencyIncident,
+    ) -> None:
+        """Test that _build_geojson returns None when polygons list is empty."""
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_has_polygon_but_empty_list
+        )
+
+        # Call the private method directly to ensure coverage
+        result = event._build_geojson()
+
+        assert result is None
+
     def test_handle_coordinator_update_found(
         self,
         mock_coordinator: MagicMock,

@@ -398,3 +398,227 @@ def mock_coordinator_with_containment(
     coordinator.data = mock_coordinator_data_with_containment
     coordinator.last_update_success = True
     return coordinator
+
+
+@pytest.fixture
+def mock_incident_with_single_polygon() -> EmergencyIncident:
+    """Create a mock incident with a single polygon geometry."""
+    return EmergencyIncident(
+        id="AUREMER-POLY-1",
+        headline="Bushfire with Polygon Boundary",
+        alert_level=AlertLevel.EMERGENCY,
+        alert_text="Emergency",
+        event_type="Bushfire",
+        event_icon="fire",
+        status="Out of control",
+        size="1000 ha",
+        source="NSW Rural Fire Service",
+        location=Coordinate(latitude=-33.85, longitude=151.25),
+        updated=datetime(2025, 1, 15, 10, 30, 0, tzinfo=UTC),
+        distance_km=15.0,
+        bearing=90.0,
+        direction="E",
+        geometry_type="Polygon",
+        has_polygon=True,
+        polygons=[
+            {
+                "outer_ring": [
+                    [151.2, -33.8],
+                    [151.3, -33.8],
+                    [151.3, -33.9],
+                    [151.2, -33.9],
+                    [151.2, -33.8],
+                ],
+                "inner_rings": None,
+            }
+        ],
+    )
+
+
+@pytest.fixture
+def mock_incident_with_polygon_and_hole() -> EmergencyIncident:
+    """Create a mock incident with a polygon containing a hole (inner ring)."""
+    return EmergencyIncident(
+        id="AUREMER-POLY-HOLE-1",
+        headline="Flood Warning with Exclusion Zone",
+        alert_level=AlertLevel.WATCH_AND_ACT,
+        alert_text="Watch and Act",
+        event_type="Flood",
+        event_icon="weather",
+        status="Active",
+        size=None,
+        source="Bureau of Meteorology",
+        location=Coordinate(latitude=-33.85, longitude=151.25),
+        updated=datetime(2025, 1, 15, 11, 0, 0, tzinfo=UTC),
+        distance_km=20.0,
+        bearing=45.0,
+        direction="NE",
+        geometry_type="Polygon",
+        has_polygon=True,
+        polygons=[
+            {
+                "outer_ring": [
+                    [151.0, -33.7],
+                    [151.4, -33.7],
+                    [151.4, -34.0],
+                    [151.0, -34.0],
+                    [151.0, -33.7],
+                ],
+                "inner_rings": [
+                    [
+                        [151.15, -33.8],
+                        [151.25, -33.8],
+                        [151.25, -33.9],
+                        [151.15, -33.9],
+                        [151.15, -33.8],
+                    ]
+                ],
+            }
+        ],
+    )
+
+
+@pytest.fixture
+def mock_incident_with_multipolygon() -> EmergencyIncident:
+    """Create a mock incident with multiple polygons (MultiPolygon)."""
+    return EmergencyIncident(
+        id="AUREMER-MULTI-1",
+        headline="Storm Warning Multiple Areas",
+        alert_level=AlertLevel.ADVICE,
+        alert_text="Advice",
+        event_type="Storm",
+        event_icon="weather",
+        status="Developing",
+        size=None,
+        source="Bureau of Meteorology",
+        location=Coordinate(latitude=-33.9, longitude=151.3),
+        updated=datetime(2025, 1, 15, 12, 0, 0, tzinfo=UTC),
+        distance_km=30.0,
+        bearing=135.0,
+        direction="SE",
+        geometry_type="MultiPolygon",
+        has_polygon=True,
+        polygons=[
+            {
+                "outer_ring": [
+                    [151.2, -33.8],
+                    [151.3, -33.8],
+                    [151.3, -33.9],
+                    [151.2, -33.9],
+                    [151.2, -33.8],
+                ],
+                "inner_rings": None,
+            },
+            {
+                "outer_ring": [
+                    [151.4, -33.7],
+                    [151.5, -33.7],
+                    [151.5, -33.8],
+                    [151.4, -33.8],
+                    [151.4, -33.7],
+                ],
+                "inner_rings": None,
+            },
+        ],
+    )
+
+
+@pytest.fixture
+def mock_incident_point_only() -> EmergencyIncident:
+    """Create a mock incident with only a point (no polygon)."""
+    return EmergencyIncident(
+        id="AUREMER-POINT-ONLY-1",
+        headline="Traffic Incident",
+        alert_level=AlertLevel.ADVICE,
+        alert_text="Advice",
+        event_type="Traffic",
+        event_icon="other",
+        status="Active",
+        size=None,
+        source="NSW Police",
+        location=Coordinate(latitude=-33.88, longitude=151.21),
+        updated=datetime(2025, 1, 15, 13, 0, 0, tzinfo=UTC),
+        distance_km=5.0,
+        bearing=0.0,
+        direction="N",
+        geometry_type="Point",
+        has_polygon=False,
+        polygons=None,
+    )
+
+
+@pytest.fixture
+def mock_incident_with_multipolygon_and_holes() -> EmergencyIncident:
+    """Create a mock incident with multiple polygons including holes."""
+    return EmergencyIncident(
+        id="AUREMER-MULTI-HOLES-1",
+        headline="Flood Warning with Multiple Areas and Exclusions",
+        alert_level=AlertLevel.WATCH_AND_ACT,
+        alert_text="Watch and Act",
+        event_type="Flood",
+        event_icon="weather",
+        status="Active",
+        size=None,
+        source="Bureau of Meteorology",
+        location=Coordinate(latitude=-33.9, longitude=151.3),
+        updated=datetime(2025, 1, 15, 14, 0, 0, tzinfo=UTC),
+        distance_km=35.0,
+        bearing=120.0,
+        direction="ESE",
+        geometry_type="MultiPolygon",
+        has_polygon=True,
+        polygons=[
+            {
+                "outer_ring": [
+                    [151.2, -33.8],
+                    [151.3, -33.8],
+                    [151.3, -33.9],
+                    [151.2, -33.9],
+                    [151.2, -33.8],
+                ],
+                "inner_rings": [
+                    [
+                        [151.22, -33.82],
+                        [151.28, -33.82],
+                        [151.28, -33.88],
+                        [151.22, -33.88],
+                        [151.22, -33.82],
+                    ]
+                ],
+            },
+            {
+                "outer_ring": [
+                    [151.4, -33.7],
+                    [151.5, -33.7],
+                    [151.5, -33.8],
+                    [151.4, -33.8],
+                    [151.4, -33.7],
+                ],
+                "inner_rings": None,
+            },
+        ],
+    )
+
+
+@pytest.fixture
+def mock_incident_has_polygon_but_empty_list() -> EmergencyIncident:
+    """Create a mock incident with has_polygon=True but empty polygons list."""
+    return EmergencyIncident(
+        id="AUREMER-EMPTY-POLY-1",
+        headline="Incident with empty polygon list",
+        alert_level=AlertLevel.ADVICE,
+        alert_text="Advice",
+        event_type="Fire",
+        event_icon="fire",
+        status="Active",
+        size=None,
+        source="NSW RFS",
+        location=Coordinate(latitude=-33.88, longitude=151.21),
+        updated=datetime(2025, 1, 15, 15, 0, 0, tzinfo=UTC),
+        distance_km=5.0,
+        bearing=0.0,
+        direction="N",
+        geometry_type="Polygon",
+        has_polygon=True,
+        polygons=[],
+    )

@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, GeoJSONMultiPolygon, GeoJSONPolygon
 from .coordinator import ABCEmergencyCoordinator
 from .models import EmergencyIncident
 
@@ -103,7 +103,48 @@ class ABCEmergencyGeolocationEvent(
         }
         if self._incident.size:
             attrs["size"] = self._incident.size
+
+        # Expose geometry information
+        attrs["has_polygon"] = self._incident.has_polygon
+        if self._incident.geometry_type:
+            attrs["geometry_type"] = self._incident.geometry_type
+
+        # Expose GeoJSON geometry for map rendering
+        if self._incident.has_polygon and self._incident.polygons:
+            geojson = self._build_geojson()
+            if geojson:
+                attrs["geojson"] = geojson
+
         return attrs
+
+    def _build_geojson(self) -> GeoJSONPolygon | GeoJSONMultiPolygon | None:
+        """Convert stored polygons to GeoJSON format.
+
+        Returns:
+            GeoJSON Polygon or MultiPolygon geometry, or None if no polygon data.
+        """
+        polygons = self._incident.polygons
+        if not polygons:
+            return None
+
+        if len(polygons) == 1:
+            # Single polygon - return as Polygon type
+            poly = polygons[0]
+            coordinates: list[list[list[float]]] = [poly["outer_ring"]]
+            inner_rings = poly.get("inner_rings")
+            if inner_rings:
+                coordinates.extend(inner_rings)
+            return GeoJSONPolygon(type="Polygon", coordinates=coordinates)
+        else:
+            # Multiple polygons - return as MultiPolygon type
+            multi_coords: list[list[list[list[float]]]] = []
+            for poly in polygons:
+                coords: list[list[list[float]]] = [poly["outer_ring"]]
+                inner = poly.get("inner_rings")
+                if inner:
+                    coords.extend(inner)
+                multi_coords.append(coords)
+            return GeoJSONMultiPolygon(type="MultiPolygon", coordinates=multi_coords)
 
     @callback
     def _handle_coordinator_update(self) -> None:

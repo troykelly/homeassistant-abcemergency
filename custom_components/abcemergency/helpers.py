@@ -154,11 +154,17 @@ def get_state_from_coordinates(latitude: float, longitude: float) -> str | None:
 
     Args:
         latitude: Latitude in degrees.
-        longitude: Longitude in degrees.
+        longitude: Longitude in degrees (will be normalized to -180 to 180).
 
     Returns:
         State code (e.g., 'nsw', 'vic') or None if outside Australia.
     """
+    # Normalize longitude to -180 to 180 range (fixes issue #105)
+    while longitude > 180:
+        longitude -= 360
+    while longitude < -180:
+        longitude += 360
+
     # Check ACT first as it's enclosed by NSW
     act_box = STATE_BOUNDING_BOXES["act"]
     if act_box[0] <= latitude <= act_box[1] and act_box[2] <= longitude <= act_box[3]:

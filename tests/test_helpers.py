@@ -226,3 +226,36 @@ class TestGetStateFromCoordinates:
         # Northern hemisphere
         result = get_state_from_coordinates(51.5074, -0.1278)  # London
         assert result is None
+
+    def test_longitude_normalization_negative(self) -> None:
+        """Test longitude < -180 is normalized correctly.
+
+        Regression test for issue #105: -237.115606 should normalize to
+        122.884394 which is in Western Australia (Kimberley region).
+        """
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # -237.115606 + 360 = 122.884394 (WA)
+        # Latitude -16.704689 is in the Kimberley region of WA
+        result = get_state_from_coordinates(-16.704689, -237.115606)
+        assert result == "wa"
+
+    def test_longitude_normalization_positive(self) -> None:
+        """Test longitude > 180 is normalized correctly."""
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # 482.884394 - 360 = 122.884394 (WA)
+        result = get_state_from_coordinates(-16.704689, 482.884394)
+        assert result == "wa"
+
+    def test_longitude_normalization_multiple_wraps(self) -> None:
+        """Test longitude that wraps multiple times is normalized."""
+        from custom_components.abcemergency.helpers import get_state_from_coordinates
+
+        # -597.115606 + 360 + 360 = 122.884394 (WA)
+        result = get_state_from_coordinates(-16.704689, -597.115606)
+        assert result == "wa"
+
+        # 842.884394 - 360 - 360 = 122.884394 (WA)
+        result = get_state_from_coordinates(-16.704689, 842.884394)
+        assert result == "wa"

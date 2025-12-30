@@ -21,6 +21,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import slugify
 
 from .const import DOMAIN, INSTANCE_TYPE_PERSON, INSTANCE_TYPE_STATE, INSTANCE_TYPE_ZONE, AlertLevel
 from .coordinator import ABCEmergencyCoordinator
@@ -249,6 +250,22 @@ class ABCEmergencyBinarySensor(ABCEmergencyEntity, BinarySensorEntity):
         super().__init__(coordinator, config_entry)
         self.entity_description = description
         self._attr_unique_id = f"{config_entry.entry_id}_{description.key}"
+        self._instance_source = config_entry.title or "ABC Emergency"
+
+    def _get_geo_location_entity_id(self, incident_id: str) -> str:
+        """Generate geo_location entity ID for a given incident.
+
+        This must match the unique_id format used in geo_location.py to ensure
+        map cards can correctly reference geo_location entities.
+
+        Args:
+            incident_id: The incident ID (e.g., "AUREMER-12345").
+
+        Returns:
+            The full entity ID (e.g., "geo_location.abc_emergency_home_auremer_12345").
+        """
+        unique_id = f"{self._instance_source}_{incident_id}"
+        return f"geo_location.{slugify(unique_id)}"
 
     @property
     def is_on(self) -> bool:
@@ -257,9 +274,19 @@ class ABCEmergencyBinarySensor(ABCEmergencyEntity, BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return extra state attributes."""
+        """Return extra state attributes.
+
+        Includes containing_entity_ids for containment sensors when available,
+        enabling map cards to dynamically discover geo_location entities.
+        """
         if self.entity_description.attr_fn:
-            return self.entity_description.attr_fn(self.data)
+            attrs = self.entity_description.attr_fn(self.data)
+            # Add containing_entity_ids for any sensor with an incidents list
+            if "incidents" in attrs:
+                attrs["containing_entity_ids"] = [
+                    self._get_geo_location_entity_id(inc["id"]) for inc in attrs["incidents"]
+                ]
+            return attrs
         return None
 
 

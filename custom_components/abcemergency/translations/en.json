@@ -113,6 +113,15 @@
       },
       "storms": {
         "name": "Storms"
+      },
+      "emergency_warnings": {
+        "name": "Emergency Warnings"
+      },
+      "watch_and_acts": {
+        "name": "Watch and Acts"
+      },
+      "advices": {
+        "name": "Advices"
       }
     },
     "binary_sensor": {

@@ -23,11 +23,13 @@ from homeassistant.components.sensor import (
 from homeassistant.const import UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import slugify
 
 from .const import (
     CONF_INSTANCE_TYPE,
     DOMAIN,
     INSTANCE_TYPE_STATE,
+    AlertLevel,
 )
 from .coordinator import ABCEmergencyCoordinator
 from .entity import ABCEmergencyEntity
@@ -135,6 +137,34 @@ def _get_incidents_list_by_type_attrs(data: CoordinatorData, event_type: str) ->
     return result
 
 
+def _get_incidents_list_by_alert_level_attrs(
+    data: CoordinatorData,
+    alert_level: str,
+) -> dict[str, Any]:
+    """Get incidents list attribute filtered by alert level.
+
+    Args:
+        data: Coordinator data containing incidents.
+        alert_level: The alert level to filter by (e.g., AlertLevel.EMERGENCY).
+
+    Returns:
+        Dictionary with 'incidents' key containing list of matching incident details,
+        plus containing_count for zone/person modes.
+    """
+    matching = [i for i in data.incidents if i.alert_level == alert_level] if data.incidents else []
+    containing = [i for i in matching if i.contains_point]
+
+    result: dict[str, Any] = {"incidents": [_incident_to_dict(i) for i in matching]}
+
+    # Add containing_count for zone/person modes
+    if data.instance_type != INSTANCE_TYPE_STATE:
+        result["containing_count"] = len(containing)
+    else:
+        result["containing_count"] = None
+
+    return result
+
+
 # Sensors for all instance types
 COMMON_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
     ABCEmergencySensorEntityDescription(
@@ -170,6 +200,36 @@ COMMON_SENSOR_DESCRIPTIONS: tuple[ABCEmergencySensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.incidents_by_type.get("Storm", 0),
         attr_fn=lambda data: _get_incidents_list_by_type_attrs(data, "Storm"),
+    ),
+    # Alert-level sensors for map card integration (Issue #101)
+    ABCEmergencySensorEntityDescription(
+        key="emergency_warnings",
+        translation_key="emergency_warnings",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: len(
+            [i for i in data.incidents if i.alert_level == AlertLevel.EMERGENCY]
+        ),
+        attr_fn=lambda data: _get_incidents_list_by_alert_level_attrs(data, AlertLevel.EMERGENCY),
+    ),
+    ABCEmergencySensorEntityDescription(
+        key="watch_and_acts",
+        translation_key="watch_and_acts",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: len(
+            [i for i in data.incidents if i.alert_level == AlertLevel.WATCH_AND_ACT]
+        ),
+        attr_fn=lambda data: _get_incidents_list_by_alert_level_attrs(
+            data, AlertLevel.WATCH_AND_ACT
+        ),
+    ),
+    ABCEmergencySensorEntityDescription(
+        key="advices",
+        translation_key="advices",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: len(
+            [i for i in data.incidents if i.alert_level == AlertLevel.ADVICE]
+        ),
+        attr_fn=lambda data: _get_incidents_list_by_alert_level_attrs(data, AlertLevel.ADVICE),
     ),
 )
 
@@ -220,6 +280,22 @@ class ABCEmergencySensor(ABCEmergencyEntity, SensorEntity):
         super().__init__(coordinator, config_entry)
         self.entity_description = description
         self._attr_unique_id = f"{config_entry.entry_id}_{description.key}"
+        self._instance_source = config_entry.title or "ABC Emergency"
+
+    def _get_geo_location_entity_id(self, incident_id: str) -> str:
+        """Generate geo_location entity ID for a given incident.
+
+        This must match the unique_id format used in geo_location.py to ensure
+        map cards can correctly reference geo_location entities.
+
+        Args:
+            incident_id: The incident ID (e.g., "AUREMER-12345").
+
+        Returns:
+            The full entity ID (e.g., "geo_location.abc_emergency_home_auremer_12345").
+        """
+        unique_id = f"{self._instance_source}_{incident_id}"
+        return f"geo_location.{slugify(unique_id)}"
 
     @property
     def native_value(self) -> int | float | str | None:
@@ -228,9 +304,19 @@ class ABCEmergencySensor(ABCEmergencyEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return extra state attributes."""
+        """Return extra state attributes.
+
+        Includes entity_ids for incidents when available, enabling map cards
+        to dynamically discover geo_location entities.
+        """
         if self.entity_description.attr_fn:
-            return self.entity_description.attr_fn(self.data)
+            attrs = self.entity_description.attr_fn(self.data)
+            # Add entity_ids for any sensor that has an incidents list
+            if "incidents" in attrs:
+                attrs["entity_ids"] = [
+                    self._get_geo_location_entity_id(inc["id"]) for inc in attrs["incidents"]
+                ]
+            return attrs
         return None
 
 

@@ -73,6 +73,88 @@ class TestGetInstanceSource:
 class TestABCEmergencyGeolocationEvent:
     """Test ABCEmergencyGeolocationEvent entity."""
 
+    def test_entity_id_matches_sensor_format(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test entity_id is explicitly set to match sensor entity_ids attribute format.
+
+        This ensures geo_location entity IDs are predictable and match what sensors
+        report in their entity_ids attribute for map card integration (#103).
+        """
+        from homeassistant.util import slugify
+
+        event = ABCEmergencyGeolocationEvent(
+            mock_coordinator, mock_incident_bushfire, instance_source="abc_emergency_home"
+        )
+
+        expected_id = f"geo_location.{slugify(f'abc_emergency_home_{mock_incident_bushfire.id}')}"
+        assert event.entity_id == expected_id
+
+    def test_entity_id_avoids_headline_collision(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test that entity_ids are unique even when headlines match.
+
+        Using incident ID in entity_id avoids collisions when multiple
+        incidents have the same location/headline.
+        """
+        from custom_components.abcemergency.models import Coordinate
+
+        incident1 = EmergencyIncident(
+            id="AUREMER-001",
+            headline="Pacific Highway Hornsby",
+            alert_level="extreme",
+            alert_text="Emergency",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Active",
+            size=None,
+            source="NSW RFS",
+            location=Coordinate(latitude=-33.7, longitude=151.1),
+            updated=datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC),
+        )
+        incident2 = EmergencyIncident(
+            id="AUREMER-002",
+            headline="Pacific Highway Hornsby",  # Same headline!
+            alert_level="severe",
+            alert_text="Watch and Act",
+            event_type="Bushfire",
+            event_icon="fire",
+            status="Active",
+            size=None,
+            source="NSW RFS",
+            location=Coordinate(latitude=-33.7, longitude=151.1),
+            updated=datetime(2025, 1, 15, 11, 0, 0, tzinfo=UTC),
+        )
+
+        event1 = ABCEmergencyGeolocationEvent(
+            mock_coordinator, incident1, instance_source="abc_emergency"
+        )
+        event2 = ABCEmergencyGeolocationEvent(
+            mock_coordinator, incident2, instance_source="abc_emergency"
+        )
+
+        # Entity IDs should be different despite same headline
+        assert event1.entity_id != event2.entity_id
+        assert "auremer_001" in event1.entity_id
+        assert "auremer_002" in event2.entity_id
+
+    def test_entity_id_with_default_source(
+        self,
+        mock_coordinator: MagicMock,
+        mock_incident_bushfire: EmergencyIncident,
+    ) -> None:
+        """Test entity_id with default source."""
+        from homeassistant.util import slugify
+
+        event = ABCEmergencyGeolocationEvent(mock_coordinator, mock_incident_bushfire)
+
+        expected_id = f"geo_location.{slugify(f'abc_emergency_{mock_incident_bushfire.id}')}"
+        assert event.entity_id == expected_id
+
     def test_unique_id_with_default_source(
         self,
         mock_coordinator: MagicMock,

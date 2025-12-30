@@ -83,6 +83,15 @@ These sensors are created for State, Zone, and Person modes.
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `incidents` | list | Array of all incidents with details |
+| `entity_ids` | list | Array of geo_location entity IDs for map card filtering |
+
+The `entity_ids` attribute contains the entity IDs of all geo_location entities represented by this sensor. Use this for dynamic filtering in the [ABC Emergency Map Card](https://github.com/troykelly/lovelace-abc-emergency-map):
+
+```yaml
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_incidents_total  # Uses entity_ids attribute
+```
 
 Each incident in the `incidents` list contains:
 - `headline` (string): Incident location description
@@ -163,6 +172,7 @@ incidents:
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `incidents` | list | Array of bushfire incidents only |
+| `entity_ids` | list | Array of geo_location entity IDs for bushfire incidents |
 
 Each incident contains: `headline`, `alert_level`, `event_type`, `distance_km`, `direction`
 
@@ -196,6 +206,7 @@ incidents:
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `incidents` | list | Array of flood incidents only |
+| `entity_ids` | list | Array of geo_location entity IDs for flood incidents |
 
 Each incident contains: `headline`, `alert_level`, `event_type`, `distance_km`, `direction`
 
@@ -219,6 +230,7 @@ Each incident contains: `headline`, `alert_level`, `event_type`, `distance_km`, 
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `incidents` | list | Array of storm incidents only |
+| `entity_ids` | list | Array of geo_location entity IDs for storm incidents |
 
 Each incident contains: `headline`, `alert_level`, `event_type`, `distance_km`, `direction`
 
@@ -246,6 +258,7 @@ These sensors are only created for Zone and Person mode instances (not State mod
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `incidents` | list | Array of nearby incidents with details |
+| `entity_ids` | list | Array of geo_location entity IDs for nearby incidents |
 
 Each incident in the `incidents` list contains:
 - `headline` (string): Incident location description
@@ -267,6 +280,9 @@ incidents:
     event_type: "Storm"
     distance_km: 45.0
     direction: "SE"
+entity_ids:
+  - geo_location.abc_emergency_home_auremer_12345
+  - geo_location.abc_emergency_home_auremer_67890
 ```
 
 ---
@@ -303,6 +319,95 @@ alert_level: "Emergency"
 event_type: "Bushfire"
 direction: "NW"
 ```
+
+---
+
+### Alert-Level Count Sensors
+
+These sensors count incidents by Australian Warning System alert level. Available for all instance types.
+
+#### emergency_warnings
+
+| Property | Value |
+|----------|-------|
+| **Entity ID** | `sensor.abc_emergency_*_emergency_warnings` |
+| **State** | Integer count |
+| **State Class** | `measurement` |
+| **Unit** | None |
+
+**Description:** Count of incidents at Emergency Warning (red/extreme) level - the highest alert level indicating immediate danger.
+
+**Example state:** `2`
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of Emergency Warning incidents |
+| `entity_ids` | list | Array of geo_location entity IDs |
+| `containing_count` | int | Number of Emergency Warning polygons containing your location (Zone/Person only) |
+
+**Example attributes:**
+```yaml
+incidents:
+  - id: "AUREMER-12345"
+    headline: "Bushfire at Milsons Gully"
+    alert_level: "extreme"
+    event_type: "Bushfire"
+    distance_km: 12.4
+    direction: "NW"
+    contains_point: true
+    has_polygon: true
+entity_ids:
+  - geo_location.abc_emergency_home_auremer_12345
+containing_count: 1
+```
+
+---
+
+#### watch_and_acts
+
+| Property | Value |
+|----------|-------|
+| **Entity ID** | `sensor.abc_emergency_*_watch_and_acts` |
+| **State** | Integer count |
+| **State Class** | `measurement` |
+| **Unit** | None |
+
+**Description:** Count of incidents at Watch and Act (orange/severe) level - conditions are changing and you should prepare to act.
+
+**Example state:** `3`
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of Watch and Act incidents |
+| `entity_ids` | list | Array of geo_location entity IDs |
+| `containing_count` | int | Number of Watch and Act polygons containing your location (Zone/Person only) |
+
+---
+
+#### advices
+
+| Property | Value |
+|----------|-------|
+| **Entity ID** | `sensor.abc_emergency_*_advices` |
+| **State** | Integer count |
+| **State Class** | `measurement` |
+| **Unit** | None |
+
+**Description:** Count of incidents at Advice (yellow/moderate) level - an incident has started and you should stay informed.
+
+**Example state:** `5`
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `incidents` | list | Array of Advice incidents |
+| `entity_ids` | list | Array of geo_location entity IDs |
+| `containing_count` | int | Number of Advice polygons containing your location (Zone/Person only) |
 
 ---
 
@@ -426,7 +531,16 @@ These sensors indicate when your monitored location is **inside** the actual bou
 |-----------|------|-------------|
 | `containing_count` | int | Number of polygons containing your location |
 | `highest_alert_level` | string | Highest alert level of containing incidents |
+| `containing_entity_ids` | list | Array of geo_location entity IDs for containing incidents |
 | `incidents` | list | Details of each containing incident |
+
+The `containing_entity_ids` attribute contains entity IDs of incidents that contain your location. Use this for filtering map displays to show only the incidents affecting you:
+
+```yaml
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - binary_sensor.abc_emergency_home_inside_polygon  # Uses containing_entity_ids
+```
 
 Each incident in the `incidents` list contains:
 - `id` (string): Unique incident identifier
@@ -439,6 +553,9 @@ Each incident in the `incidents` list contains:
 ```yaml
 containing_count: 2
 highest_alert_level: "extreme"
+containing_entity_ids:
+  - geo_location.abc_emergency_home_auremer_123456
+  - geo_location.abc_emergency_home_auremer_123457
 incidents:
   - id: "AUREMER-123456"
     headline: "Bushfire at Milsons Gully"
@@ -469,6 +586,7 @@ incidents:
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `count` | int | Number of Emergency Warning polygons containing you |
+| `containing_entity_ids` | list | Array of geo_location entity IDs for Emergency Warning incidents containing you |
 | `incidents` | list | Details of containing Emergency Warning incidents |
 
 ---
@@ -488,6 +606,7 @@ incidents:
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `count` | int | Number of Watch and Act (or higher) polygons containing you |
+| `containing_entity_ids` | list | Array of geo_location entity IDs for Watch and Act (or higher) incidents containing you |
 | `incidents` | list | Details of containing incidents at this level or higher |
 
 ---
@@ -507,6 +626,7 @@ incidents:
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `count` | int | Number of warning polygons containing you |
+| `containing_entity_ids` | list | Array of geo_location entity IDs for all incidents containing you |
 | `incidents` | list | Details of all containing incidents |
 
 ---
@@ -637,6 +757,47 @@ When enabled, the integration creates geo-location entities for mapping incident
 | `direction` | string | Compass direction from monitored location |
 | `updated` | string | ISO 8601 timestamp of last update |
 | `size` | string | Affected area size (for fires, when available) |
+
+**GeoJSON Geometry Attributes:**
+
+These attributes expose polygon geometry data for advanced map rendering with the [ABC Emergency Map Card](https://github.com/troykelly/lovelace-abc-emergency-map):
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `geojson_geometry` | object | Full GeoJSON geometry object (Point or Polygon) |
+| `geometry_type` | string | Geometry type: "Point" or "Polygon" |
+| `polygon_coordinates` | list | Coordinate arrays (when polygon available) |
+| `has_polygon` | bool | True if incident has polygon boundary data |
+
+**Example GeoJSON attributes (Point - no polygon data):**
+```yaml
+geojson_geometry:
+  type: "Point"
+  coordinates: [151.2093, -33.8688]
+geometry_type: "Point"
+polygon_coordinates: null
+has_polygon: false
+```
+
+**Example GeoJSON attributes (Polygon - with boundary data):**
+```yaml
+geojson_geometry:
+  type: "Polygon"
+  coordinates:
+    - - [151.0, -33.8]
+      - [151.1, -33.8]
+      - [151.1, -33.9]
+      - [151.0, -33.9]
+      - [151.0, -33.8]
+geometry_type: "Polygon"
+polygon_coordinates:
+  - - [151.0, -33.8]
+    - [151.1, -33.8]
+    - [151.1, -33.9]
+    - [151.0, -33.9]
+    - [151.0, -33.8]
+has_polygon: true
+```
 
 **Note:** The `source` attribute matches your configuration title exactly. Use this in map card `geo_location_sources` to filter incidents by instance. For example:
 

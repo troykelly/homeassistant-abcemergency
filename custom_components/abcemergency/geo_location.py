@@ -14,6 +14,7 @@ from homeassistant.const import UnitOfLength
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN, GeoJSONMultiPolygon, GeoJSONPolygon
 from .coordinator import ABCEmergencyCoordinator
@@ -67,6 +68,9 @@ class ABCEmergencyGeolocationEvent(
         self._instance_source = instance_source
         self._attr_unique_id = f"{instance_source}_{incident.id}"
         self._attr_name = incident.headline
+        # Force predictable entity_id from unique incident ID to match sensor entity_ids
+        # attribute format and avoid collisions from duplicate headlines (#103)
+        self.entity_id = f"geo_location.{slugify(f'{instance_source}_{incident.id}')}"
 
     @property
     def source(self) -> str:

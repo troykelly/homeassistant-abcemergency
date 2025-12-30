@@ -19,12 +19,14 @@
   <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/Home%20Assistant-2024.1+-blue?style=flat-square&logo=home-assistant" alt="Home Assistant"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12+-blue?style=flat-square&logo=python" alt="Python"></a>
   <a href="https://github.com/troykelly/homeassistant-abcemergency/actions"><img src="https://img.shields.io/github/actions/workflow/status/troykelly/homeassistant-abcemergency/ci.yml?style=flat-square&logo=github" alt="CI"></a>
+  <a href="#advanced-polygon-mapping"><img src="https://img.shields.io/badge/Polygon%20Mapping-Supported-green?style=flat-square" alt="Polygon Mapping"></a>
 </p>
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> &bull;
   <a href="docs/getting-started.md">Installation Guide</a> &bull;
   <a href="docs/automations.md">Automations</a> &bull;
+  <a href="#companion-projects">Map Card</a> &bull;
   <a href="docs/troubleshooting.md">Troubleshooting</a>
 </p>
 
@@ -98,6 +100,40 @@ Know when you're not just *near* an emergency, but **inside** the actual warning
 - **Enter/exit events** - Get notified when you enter or leave an emergency zone
 - **Severity change events** - Get alerted when an emergency escalates (e.g., Advice → Emergency Warning) while you're inside
 - **Per-alert-level containment** - Know if you're inside an Emergency Warning, Watch and Act, or Advice zone
+
+### Advanced Polygon Mapping
+
+This integration exposes incident polygon boundaries as GeoJSON, enabling advanced map visualizations:
+
+- **Polygon geometry data** - Full boundary coordinates available on geo-location entities
+- **Entity discovery** - Sensors expose `entity_ids` for dynamic geo-location entity filtering
+- **Companion map card** - See the [ABC Emergency Map Card](#companion-projects) for polygon rendering
+
+---
+
+## Companion Projects
+
+### ABC Emergency Map Card
+
+For advanced dashboard mapping with **polygon rendering**, use the companion [ABC Emergency Map Card](https://github.com/troykelly/lovelace-abc-emergency-map):
+
+| Feature | Native Map Card | ABC Emergency Map Card |
+|---------|-----------------|------------------------|
+| Incident markers | Yes | Yes |
+| Polygon boundaries | No | **Yes** |
+| Filter by sensor | No | **Yes** |
+| Custom styling | Limited | **Yes** |
+
+The native Home Assistant map card shows incidents as points only. The ABC Emergency Map Card renders actual emergency zone boundaries using the GeoJSON data exposed by this integration.
+
+```yaml
+# Example: Show bushfire polygons on map
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_bushfires
+```
+
+See [Dashboard Maps](docs/dashboard-maps.md) for configuration details.
 
 ---
 

@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.4.5] - 2025-12-30
+
+### Fixed
+
+- **Longitude normalization** - Fixed state determination for locations with longitude outside the standard -180 to 180 range
+  - Longitude -237.115606 now correctly normalizes to 122.884394 (Western Australia)
+  - Normalization applied at start of `get_state_from_coordinates()` before checking state bounding boxes
+
+## [0.4.4] - 2025-12-30
+
+### Fixed
+
+- **Entity ID predictability** - Geo-location entities now use explicit entity IDs matching the format exposed in sensor `entity_ids` attributes
+  - Previous: Entity IDs generated from headline (could collide for duplicate headlines)
+  - New: Entity IDs follow format `geo_location.{source}_{incident_id}` matching sensor references
+  - Eliminates mismatch between sensor `entity_ids` attribute and actual geo-location entity IDs
+
+## [0.4.3] - 2025-12-30
+
+### Added
+
+- **Entity discovery attributes** - Sensors and binary sensors now expose entity IDs for dynamic geo-location entity discovery
+  - `entity_ids` attribute on count sensors: `incidents_total`, `bushfires`, `floods`, `storms`, `incidents_nearby`
+  - `containing_entity_ids` attribute on containment binary sensors
+- **Alert-level count sensors** - New sensors for filtering by Australian Warning System level:
+  - `sensor.*_emergency_warnings` - Count of incidents at Emergency Warning (red) level
+  - `sensor.*_watch_and_acts` - Count of incidents at Watch and Act (orange) level
+  - `sensor.*_advices` - Count of incidents at Advice (yellow) level
+  - Each includes `entity_ids`, `incidents`, and `containing_count` attributes
+
+## [0.4.2] - 2025-12-30
+
+### Added
+
+- **GeoJSON geometry exposure** - Geo-location entities now expose polygon geometry data for map rendering
+  - `geojson_geometry` attribute with full GeoJSON geometry object (Point or Polygon)
+  - `geometry_type` attribute indicating "Point" or "Polygon"
+  - `polygon_coordinates` attribute with coordinate arrays (when polygon available)
+  - Supports single polygons, multi-polygons, and inner rings (holes)
+  - Enables [ABC Emergency Map Card](https://github.com/troykelly/lovelace-abc-emergency-map) to render incident boundaries
+
 ## [0.4.1] - 2025-12-08
 
 ### Added
@@ -126,13 +167,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.4.5 | 2025-12-30 | Longitude normalization for state determination |
+| 0.4.4 | 2025-12-30 | Predictable geo-location entity IDs matching sensor attributes |
+| 0.4.3 | 2025-12-30 | Entity discovery attributes, alert-level count sensors |
+| 0.4.2 | 2025-12-30 | GeoJSON geometry exposure for map card polygon rendering |
 | 0.4.1 | 2025-12-08 | Containment severity change event, improved polygon boundary change detection |
 | 0.4.0 | 2025-12-08 | Point-in-polygon containment detection, new containment binary sensors and events |
 | 0.3.0 | 2025-12-07 | Documentation improvements, Blueprints, my.home-assistant.io buttons |
 | 0.2.0 | 2025-12-07 | Instance-based map filtering, new events, enhanced attributes |
 | 0.1.0 | 2025-12-07 | Initial release with all core features |
 
-[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.2.0...v0.3.0

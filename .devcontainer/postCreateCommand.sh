@@ -9,6 +9,46 @@ echo "=== Home Assistant ABC Emergency Integration - Dev Container Setup ==="
 # Activate the Home Assistant virtual environment
 export PATH="/home/vscode/.local/ha-venv/bin:$PATH"
 
+# ============================================================================
+# GitHub Token Configuration (Idempotent)
+# ============================================================================
+# This ensures the GitHub token is available for CLI tools, MCP servers, etc.
+# The same setup runs in postStartCommand.sh for existing environments.
+
+setup_github_token_export() {
+    local rc_file="$1"
+    local marker="# GitHub Token Export (devcontainer)"
+    local export_line='export GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || echo "")}"'
+
+    # Create the file if it doesn't exist
+    touch "$rc_file"
+
+    # Check if our marker already exists (idempotent check)
+    if grep -qF "$marker" "$rc_file" 2>/dev/null; then
+        return 0  # Already configured
+    fi
+
+    # Add the configuration block
+    {
+        echo ""
+        echo "$marker"
+        echo "$export_line"
+    } >> "$rc_file"
+}
+
+# Configure GitHub token export for both shells
+echo "Configuring GitHub token for shell sessions..."
+setup_github_token_export "/home/vscode/.bashrc"
+setup_github_token_export "/home/vscode/.zshrc"
+
+# Export for the current session
+if [ -n "$GITHUB_TOKEN" ]; then
+    export GITHUB_TOKEN
+elif command -v gh &>/dev/null; then
+    GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "")
+    export GITHUB_TOKEN
+fi
+
 # Create config directory if it doesn't exist
 mkdir -p /workspaces/homeassistant-abcemergency/config/custom_components
 

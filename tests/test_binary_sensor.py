@@ -758,3 +758,227 @@ class TestContainmentBinarySensorAttributes:
 
         assert attrs["count"] == 2  # Both extreme and moderate
         assert len(attrs["incidents"]) == 2
+
+
+class TestContainingEntityIdsAttribute:
+    """Test containing_entity_ids attribute for map card integration (Issue #101)."""
+
+    def test_inside_polygon_has_containing_entity_ids(
+        self,
+        mock_coordinator_data_with_containment: CoordinatorData,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test inside_polygon sensor includes containing_entity_ids."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+
+        # Use coordinator with containment data
+        mock_coordinator.data = mock_coordinator_data_with_containment
+
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+
+        sensor = ABCEmergencyBinarySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "containing_entity_ids" in attrs
+        assert isinstance(attrs["containing_entity_ids"], list)
+
+    def test_containing_entity_ids_format_uses_slugify(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test containing_entity_ids are correctly formatted using slugify."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        # Create containment data with known incident
+        containment_data = CoordinatorData(
+            incidents=[mock_incident_bushfire],
+            total_count=1,
+            nearby_count=1,
+            inside_polygon=True,
+            highest_containing_alert_level=AlertLevel.EMERGENCY,
+            containing_incidents=[mock_incident_bushfire],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        mock_coordinator.data = containment_data
+
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+
+        sensor = ABCEmergencyBinarySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        entity_ids = attrs["containing_entity_ids"]
+
+        # Entity IDs should be slugified
+        assert "geo_location.abc_emergency_home_auremer_12345" in entity_ids
+
+    def test_containing_entity_ids_match_incidents_count(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+        mock_incident_flood: EmergencyIncident,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test containing_entity_ids count matches incidents count."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        containment_data = CoordinatorData(
+            incidents=[mock_incident_bushfire, mock_incident_flood],
+            total_count=2,
+            nearby_count=2,
+            inside_polygon=True,
+            highest_containing_alert_level=AlertLevel.EMERGENCY,
+            containing_incidents=[mock_incident_bushfire, mock_incident_flood],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        mock_coordinator.data = containment_data
+
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+
+        sensor = ABCEmergencyBinarySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert len(attrs["containing_entity_ids"]) == len(attrs["incidents"])
+
+    def test_inside_emergency_warning_has_containing_entity_ids(
+        self,
+        mock_incident_bushfire: EmergencyIncident,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test inside_emergency_warning sensor includes containing_entity_ids."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        containment_data = CoordinatorData(
+            incidents=[mock_incident_bushfire],
+            total_count=1,
+            nearby_count=1,
+            inside_polygon=True,
+            inside_emergency_warning=True,
+            highest_containing_alert_level=AlertLevel.EMERGENCY,
+            containing_incidents=[mock_incident_bushfire],
+            instance_type=INSTANCE_TYPE_ZONE,
+        )
+        mock_coordinator.data = containment_data
+
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+
+        desc = next(
+            d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_emergency_warning"
+        )
+
+        sensor = ABCEmergencyBinarySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "containing_entity_ids" in attrs
+        assert len(attrs["containing_entity_ids"]) == 1
+        assert "geo_location.abc_emergency_home_auremer_12345" in attrs["containing_entity_ids"]
+
+    def test_containing_entity_ids_empty_when_no_containment(
+        self,
+        mock_coordinator_empty: MagicMock,
+    ) -> None:
+        """Test containing_entity_ids is empty when no containment."""
+        from custom_components.abcemergency.binary_sensor import (
+            CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS,
+        )
+
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+
+        desc = next(d for d in CONTAINMENT_BINARY_SENSOR_DESCRIPTIONS if d.key == "inside_polygon")
+
+        sensor = ABCEmergencyBinarySensor(mock_coordinator_empty, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "containing_entity_ids" in attrs
+        assert attrs["containing_entity_ids"] == []
+
+    def test_binary_sensor_stores_instance_source(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test binary sensor stores _instance_source from config entry title."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = BINARY_SENSOR_DESCRIPTIONS[0]
+
+        sensor = ABCEmergencyBinarySensor(mock_coordinator, entry, desc)
+
+        assert hasattr(sensor, "_instance_source")
+        assert sensor._instance_source == "ABC Emergency (Home)"

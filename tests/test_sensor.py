@@ -38,7 +38,8 @@ class TestSensorDescriptions:
 
     def test_common_sensor_descriptions_exist(self) -> None:
         """Test that common sensor descriptions are defined."""
-        assert len(COMMON_SENSOR_DESCRIPTIONS) == 5
+        # 5 original + 3 alert-level sensors = 8 total
+        assert len(COMMON_SENSOR_DESCRIPTIONS) == 8
 
     def test_location_sensor_descriptions_exist(self) -> None:
         """Test that location sensor descriptions are defined."""
@@ -557,8 +558,8 @@ class TestAsyncSetupEntry:
 
         await async_setup_entry(hass, entry, mock_add_entities)
 
-        # State instances only get common sensors (5)
-        assert len(entities_added) == 5
+        # State instances only get common sensors (8 including 3 alert-level sensors)
+        assert len(entities_added) == 8
         assert all(isinstance(e, ABCEmergencySensor) for e in entities_added)
 
     async def test_setup_creates_all_sensors_for_zone_instance(
@@ -589,8 +590,8 @@ class TestAsyncSetupEntry:
 
         await async_setup_entry(hass, entry, mock_add_entities)
 
-        # Zone instances get common (5) + location (2) = 7 sensors
-        assert len(entities_added) == 7
+        # Zone instances get common (8) + location (2) = 10 sensors
+        assert len(entities_added) == 10
         assert all(isinstance(e, ABCEmergencySensor) for e in entities_added)
 
 
@@ -732,3 +733,433 @@ class TestContainmentAttributes:
         )
         assert "containing_count" in result
         assert result["containing_count"] == 1  # One containing bushfire
+
+
+class TestEntityIdsAttribute:
+    """Test entity_ids attribute for map card integration (Issue #101)."""
+
+    def test_incidents_total_has_entity_ids_attribute(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test incidents_total sensor includes entity_ids in attributes."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert isinstance(attrs["entity_ids"], list)
+        assert len(attrs["entity_ids"]) == 3  # 3 incidents in mock data
+
+    def test_entity_ids_format_uses_slugify(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test entity_ids are correctly formatted using slugify."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        entity_ids = attrs["entity_ids"]
+
+        # Entity IDs should be slugified: geo_location.abc_emergency_home_auremer_12345
+        # Instance source "ABC Emergency (Home)" + incident ID "AUREMER-12345"
+        # Slugified: abc_emergency_home_auremer_12345
+        assert "geo_location.abc_emergency_home_auremer_12345" in entity_ids
+
+    def test_entity_ids_match_incident_count(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test entity_ids count matches incidents count."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert len(attrs["entity_ids"]) == len(attrs["incidents"])
+
+    def test_bushfires_sensor_has_entity_ids(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test bushfires sensor includes entity_ids for matching incidents."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "bushfires")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert len(attrs["entity_ids"]) == 1  # Only 1 bushfire in mock data
+        assert "geo_location.abc_emergency_home_auremer_12345" in attrs["entity_ids"]
+
+    def test_floods_sensor_has_entity_ids(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test floods sensor includes entity_ids for matching incidents."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "floods")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert len(attrs["entity_ids"]) == 1  # Only 1 flood in mock data
+        assert "geo_location.abc_emergency_home_auremer_12346" in attrs["entity_ids"]
+
+    def test_storms_sensor_has_entity_ids(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test storms sensor includes entity_ids for matching incidents."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "storms")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert len(attrs["entity_ids"]) == 1  # Only 1 storm in mock data
+        assert "geo_location.abc_emergency_home_auremer_12347" in attrs["entity_ids"]
+
+    def test_incidents_nearby_has_entity_ids(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test incidents_nearby sensor includes entity_ids."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in LOCATION_SENSOR_DESCRIPTIONS if d.key == "incidents_nearby")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert len(attrs["entity_ids"]) == 3  # All incidents are nearby in mock data
+
+    def test_entity_ids_empty_when_no_incidents(
+        self,
+        mock_coordinator_empty: MagicMock,
+    ) -> None:
+        """Test entity_ids is empty list when no incidents."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+
+        sensor = ABCEmergencySensor(mock_coordinator_empty, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert attrs["entity_ids"] == []
+
+    def test_entity_ids_uses_default_source_when_no_title(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test entity_ids uses 'ABC Emergency' when entry has no title."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="",  # Empty title
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "bushfires")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        # With empty title, uses "ABC Emergency" as source
+        assert "geo_location.abc_emergency_auremer_12345" in attrs["entity_ids"]
+
+    def test_sensor_stores_instance_source(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test sensor stores _instance_source from config entry title."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "incidents_total")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        assert hasattr(sensor, "_instance_source")
+        assert sensor._instance_source == "ABC Emergency (Home)"
+
+
+class TestAlertLevelSensors:
+    """Test new alert-level sensors for map card integration (Issue #101)."""
+
+    def test_emergency_warnings_sensor_exists(self) -> None:
+        """Test emergency_warnings sensor description exists."""
+        desc = next(
+            (d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "emergency_warnings"),
+            None,
+        )
+        assert desc is not None
+        assert desc.translation_key == "emergency_warnings"
+
+    def test_watch_and_acts_sensor_exists(self) -> None:
+        """Test watch_and_acts sensor description exists."""
+        desc = next(
+            (d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "watch_and_acts"),
+            None,
+        )
+        assert desc is not None
+        assert desc.translation_key == "watch_and_acts"
+
+    def test_advices_sensor_exists(self) -> None:
+        """Test advices sensor description exists."""
+        desc = next(
+            (d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "advices"),
+            None,
+        )
+        assert desc is not None
+        assert desc.translation_key == "advices"
+
+    def test_emergency_warnings_counts_extreme_level(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test emergency_warnings counts only extreme (emergency) level incidents."""
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "emergency_warnings")
+        # Mock data has 1 bushfire with extreme alert level
+        assert desc.value_fn(mock_coordinator_data) == 1
+
+    def test_watch_and_acts_counts_severe_level(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test watch_and_acts counts only severe (watch and act) level incidents."""
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "watch_and_acts")
+        # Mock data has 1 flood with severe alert level
+        assert desc.value_fn(mock_coordinator_data) == 1
+
+    def test_advices_counts_moderate_level(
+        self,
+        mock_coordinator_data: CoordinatorData,
+    ) -> None:
+        """Test advices counts only moderate (advice) level incidents."""
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "advices")
+        # Mock data has 1 storm with moderate alert level
+        assert desc.value_fn(mock_coordinator_data) == 1
+
+    def test_emergency_warnings_zero_when_no_extreme(
+        self,
+        mock_coordinator_data_empty: CoordinatorData,
+    ) -> None:
+        """Test emergency_warnings returns 0 when no extreme alerts."""
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "emergency_warnings")
+        assert desc.value_fn(mock_coordinator_data_empty) == 0
+
+    def test_emergency_warnings_has_entity_ids(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test emergency_warnings sensor includes entity_ids."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "emergency_warnings")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert len(attrs["entity_ids"]) == 1  # Only bushfire is extreme
+        assert "geo_location.abc_emergency_home_auremer_12345" in attrs["entity_ids"]
+
+    def test_watch_and_acts_has_entity_ids(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test watch_and_acts sensor includes entity_ids."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "watch_and_acts")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert len(attrs["entity_ids"]) == 1  # Only flood is severe
+        assert "geo_location.abc_emergency_home_auremer_12346" in attrs["entity_ids"]
+
+    def test_advices_has_entity_ids(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test advices sensor includes entity_ids."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "advices")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "entity_ids" in attrs
+        assert len(attrs["entity_ids"]) == 1  # Only storm is moderate
+        assert "geo_location.abc_emergency_home_auremer_12347" in attrs["entity_ids"]
+
+    def test_alert_level_sensors_have_incidents_list(
+        self,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test alert-level sensors include incidents list in attributes."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_INSTANCE_TYPE: INSTANCE_TYPE_ZONE,
+                CONF_ZONE_NAME: "Home",
+                CONF_LATITUDE: -33.8688,
+                CONF_LONGITUDE: 151.2093,
+            },
+            unique_id="abc_emergency_zone_home",
+            title="ABC Emergency (Home)",
+        )
+        desc = next(d for d in COMMON_SENSOR_DESCRIPTIONS if d.key == "emergency_warnings")
+
+        sensor = ABCEmergencySensor(mock_coordinator, entry, desc)
+
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert "incidents" in attrs
+        assert len(attrs["incidents"]) == 1
+        assert attrs["incidents"][0]["alert_level"] == AlertLevel.EMERGENCY

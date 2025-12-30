@@ -671,6 +671,263 @@ automation:
 
 ---
 
+## Custom Dashboard Integration
+
+Use the `entity_ids` attribute for dynamic entity discovery and advanced dashboard configurations.
+
+### Dynamic Entity Discovery
+
+The `entity_ids` attribute on count sensors provides a list of geo_location entity IDs that can be used for programmatic access:
+
+```yaml
+# Template to list all incident entity IDs
+template:
+  - sensor:
+      - name: "Active Incident Entities"
+        unique_id: active_incident_entities
+        state: >
+          {{ state_attr('sensor.abc_emergency_home_incidents_total', 'entity_ids') | length }}
+        attributes:
+          entities: >
+            {{ state_attr('sensor.abc_emergency_home_incidents_total', 'entity_ids') }}
+```
+
+### Iterating Over Incident Entities
+
+Access each geo_location entity programmatically:
+
+```yaml
+# Markdown card showing all incidents with details
+type: markdown
+content: |
+  ## Active Incidents
+
+  {% set entity_ids = state_attr('sensor.abc_emergency_home_incidents_total', 'entity_ids') or [] %}
+  {% for entity_id in entity_ids %}
+  {% set incident = states[entity_id.split('.')[0]][entity_id.split('.')[1]] %}
+  ### {{ incident.attributes.get('headline', 'Unknown') }}
+  - **Type:** {{ incident.attributes.get('event_type', 'Unknown') }}
+  - **Alert Level:** {{ incident.attributes.get('alert_text', 'Unknown') }}
+  - **Distance:** {{ incident.state }}km {{ incident.attributes.get('direction', '') }}
+
+  {% endfor %}
+```
+
+### Containment Safety Dashboard
+
+Use `containing_entity_ids` for a safety dashboard showing only incidents that contain your location:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: conditional
+    conditions:
+      - entity: binary_sensor.abc_emergency_home_inside_polygon
+        state: "on"
+    card:
+      type: markdown
+      content: |
+        # ⚠️ YOU ARE INSIDE AN EMERGENCY ZONE
+
+        {% set entity_ids = state_attr('binary_sensor.abc_emergency_home_inside_polygon', 'containing_entity_ids') or [] %}
+        {% for entity_id in entity_ids %}
+        {% set incident = states[entity_id.split('.')[0]][entity_id.split('.')[1]] %}
+        ## {{ incident.attributes.get('headline', 'Unknown') }}
+        - **Alert Level:** {{ incident.attributes.get('alert_text', 'Unknown') }}
+        - **Event Type:** {{ incident.attributes.get('event_type', 'Unknown') }}
+
+        {% endfor %}
+      style: |
+        ha-card {
+          background-color: #d31717;
+          color: white;
+        }
+
+  - type: map
+    geo_location_sources:
+      - binary_sensor.abc_emergency_home_inside_polygon
+    entities:
+      - zone.home
+    default_zoom: 12
+```
+
+### Filter by Alert Level
+
+Show only high-severity incidents:
+
+```yaml
+# Only Emergency Warning incidents
+type: markdown
+content: |
+  ## Emergency Warnings
+
+  {% set entity_ids = state_attr('sensor.abc_emergency_home_emergency_warnings', 'entity_ids') or [] %}
+  {% if entity_ids | length > 0 %}
+  {% for entity_id in entity_ids %}
+  {% set incident = states[entity_id.split('.')[0]][entity_id.split('.')[1]] %}
+  - **{{ incident.attributes.get('headline', 'Unknown') }}** ({{ incident.state }}km)
+  {% endfor %}
+  {% else %}
+  No Emergency Warning level incidents.
+  {% endif %}
+```
+
+---
+
+## Polygon Geometry Access
+
+Geo-location entities expose polygon geometry data via the `geojson_geometry` attribute for advanced mapping and spatial analysis.
+
+### GeoJSON Geometry Structure
+
+Each geo_location entity includes these geometry attributes:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `geojson_geometry` | object | Full GeoJSON geometry object |
+| `geometry_type` | string | "Point" or "Polygon" |
+| `polygon_coordinates` | list | Array of coordinate arrays (for polygons) |
+| `has_polygon` | bool | True if polygon boundary data is available |
+
+### Point Geometry (No Polygon)
+
+When only a point location is available:
+
+```json
+{
+  "geojson_geometry": {
+    "type": "Point",
+    "coordinates": [151.2093, -33.8688]
+  },
+  "geometry_type": "Point",
+  "polygon_coordinates": null,
+  "has_polygon": false
+}
+```
+
+### Polygon Geometry (With Boundary)
+
+When full boundary data is available:
+
+```json
+{
+  "geojson_geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [151.0, -33.8],
+        [151.1, -33.8],
+        [151.1, -33.9],
+        [151.0, -33.9],
+        [151.0, -33.8]
+      ]
+    ]
+  },
+  "geometry_type": "Polygon",
+  "polygon_coordinates": [
+    [
+      [151.0, -33.8],
+      [151.1, -33.8],
+      [151.1, -33.9],
+      [151.0, -33.9],
+      [151.0, -33.8]
+    ]
+  ],
+  "has_polygon": true
+}
+```
+
+### Accessing Polygon Data in Templates
+
+```yaml
+template:
+  - sensor:
+      - name: "Incidents With Polygons"
+        unique_id: incidents_with_polygons
+        state: >
+          {% set entity_ids = state_attr('sensor.abc_emergency_home_incidents_total', 'entity_ids') or [] %}
+          {% set polygon_count = namespace(count=0) %}
+          {% for entity_id in entity_ids %}
+          {% set parts = entity_id.split('.') %}
+          {% set incident = states[parts[0]][parts[1]] %}
+          {% if incident and incident.attributes.get('has_polygon', false) %}
+          {% set polygon_count.count = polygon_count.count + 1 %}
+          {% endif %}
+          {% endfor %}
+          {{ polygon_count.count }}
+```
+
+### Use Cases for Polygon Data
+
+#### External Mapping Integration
+
+Export polygon data to external mapping services:
+
+```yaml
+# REST command to send polygon data to external service
+rest_command:
+  send_polygon_to_map_service:
+    url: "https://your-mapping-service.com/api/polygon"
+    method: POST
+    content_type: "application/json"
+    payload: >
+      {
+        "incident_id": "{{ incident_id }}",
+        "geometry": {{ geojson_geometry | tojson }}
+      }
+```
+
+#### Area Calculations (With External Processing)
+
+While Home Assistant templates can't calculate polygon areas directly, you can export the data for external processing:
+
+```yaml
+# Python script to calculate area (scripts/calculate_area.py)
+automation:
+  - alias: "Log Polygon Area"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.abc_emergency_home_inside_polygon
+        to: "on"
+    action:
+      - service: python_script.calculate_area
+        data:
+          entity_id: >
+            {{ state_attr('binary_sensor.abc_emergency_home_inside_polygon', 'containing_entity_ids')[0] }}
+```
+
+#### Custom Map Card Integration
+
+The [ABC Emergency Map Card](https://github.com/troykelly/lovelace-abc-emergency-map) uses this geometry data to render polygon boundaries:
+
+```yaml
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_incidents_total
+show_polygons: true
+polygon_opacity: 0.3
+```
+
+### Checking for Polygon Availability
+
+Before using polygon data, always check `has_polygon`:
+
+```yaml
+# Only show polygon info if available
+type: conditional
+conditions:
+  - entity: geo_location.abc_emergency_home_auremer_12345
+    attribute: has_polygon
+    state: true
+card:
+  type: markdown
+  content: |
+    Polygon boundary data available for this incident.
+    Type: {{ state_attr('geo_location.abc_emergency_home_auremer_12345', 'geometry_type') }}
+```
+
+---
+
 ## Next Steps
 
 - [Automations Guide](automations.md) - Automation examples

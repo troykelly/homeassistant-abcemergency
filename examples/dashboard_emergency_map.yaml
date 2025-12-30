@@ -1,0 +1,177 @@
+# ABC Emergency Dashboard Example
+#
+# This dashboard displays emergency incidents on a map with alert indicators.
+#
+# USAGE:
+# 1. Copy this file to your Home Assistant config directory
+# 2. Add to configuration.yaml:
+#    lovelace:
+#      mode: storage
+#      dashboards:
+#        emergency:
+#          mode: yaml
+#          title: Emergency
+#          icon: mdi:alert
+#          show_in_sidebar: true
+#          filename: dashboard_emergency_map.yaml
+#
+# 3. Update entity names below to match your instance:
+#    - Replace "treehouse" with your zone name (lowercase, underscores for spaces)
+#    - Replace "ABC Emergency (Treehouse)" with your config entry title
+#
+# To find your geo_location_sources name:
+#   Go to Settings > Devices & Services > ABC Emergency
+#   The source name is your integration title (e.g., "ABC Emergency (Sydney)")
+#
+# NOTE: This requires the ABC Emergency integration to be installed and configured
+
+title: ABC Emergency
+views:
+  # View 1: Full-screen Map (PANEL view)
+  - title: Map
+    path: map
+    icon: mdi:map
+    type: panel
+    cards:
+      - type: map
+        geo_location_sources:
+          - "ABC Emergency (Treehouse)"
+        default_zoom: 9
+        hours_to_show: 24
+
+  # View 2: Dashboard Overview
+  - title: Overview
+    path: overview
+    icon: mdi:view-dashboard
+    cards:
+      # Embedded map card
+      - type: map
+        geo_location_sources:
+          - "ABC Emergency (Treehouse)"
+        default_zoom: 10
+        aspect_ratio: 16:9
+
+      # Alert Status tiles
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "## Alert Status"
+          - type: horizontal-stack
+            cards:
+              - type: tile
+                entity: binary_sensor.abc_emergency_treehouse_emergency_warning
+                name: Emergency
+                icon: mdi:alert-octagon
+                color: red
+              - type: tile
+                entity: binary_sensor.abc_emergency_treehouse_watch_and_act
+                name: Watch & Act
+                icon: mdi:alert
+                color: orange
+              - type: tile
+                entity: binary_sensor.abc_emergency_treehouse_advice
+                name: Advice
+                icon: mdi:information
+                color: amber
+
+      # Incident counts
+      - type: entities
+        title: Incident Summary
+        show_header_toggle: false
+        entities:
+          - entity: sensor.abc_emergency_treehouse_total_incidents
+            name: Total Incidents
+            icon: mdi:map-marker-multiple
+          - entity: sensor.abc_emergency_treehouse_nearby_incidents
+            name: Nearby Incidents
+            icon: mdi:map-marker-radius
+          - type: divider
+          - entity: sensor.abc_emergency_treehouse_bushfires
+            name: Bushfires
+            icon: mdi:fire
+          - entity: sensor.abc_emergency_treehouse_floods
+            name: Floods
+            icon: mdi:water
+          - entity: sensor.abc_emergency_treehouse_storms
+            name: Storms
+            icon: mdi:weather-lightning
+
+      # Nearest incident details
+      - type: markdown
+        title: Nearest Incident
+        content: |
+          {% set sensor = 'sensor.abc_emergency_treehouse_nearest_incident' %}
+          {% if states(sensor) != 'unknown' and states(sensor) != 'unavailable' and states(sensor) | float(0) > 0 %}
+          **{{ state_attr(sensor, 'headline') }}**
+
+          | Property | Value |
+          |----------|-------|
+          | Distance | {{ states(sensor) }} km |
+          | Direction | {{ state_attr(sensor, 'direction') }} |
+          | Type | {{ state_attr(sensor, 'event_type') }} |
+          | Alert Level | {{ state_attr(sensor, 'alert_level') }} |
+          {% else %}
+          No nearby incidents detected.
+          {% endif %}
+
+      # Highest alert level
+      - type: entity
+        entity: sensor.abc_emergency_treehouse_highest_alert_level
+        name: Highest Alert Level
+        icon: mdi:alert-decagram
+
+  # View 3: Bushfire Focus
+  - title: Bushfires
+    path: bushfires
+    icon: mdi:fire
+    cards:
+      - type: map
+        geo_location_sources:
+          - "ABC Emergency (Treehouse)"
+        default_zoom: 9
+        aspect_ratio: 16:9
+
+      - type: markdown
+        title: Active Bushfires
+        content: |
+          {% set sensor = 'sensor.abc_emergency_treehouse_bushfires' %}
+          {% set incidents = state_attr(sensor, 'incidents') or [] %}
+          {% if incidents | length > 0 %}
+          | Location | Alert | Distance | Direction |
+          |----------|-------|----------|-----------|
+          {% for incident in incidents[:15] %}
+          | {{ incident.headline }} | {{ incident.alert_level }} | {{ incident.distance_km | round(1) }} km | {{ incident.direction }} |
+          {% endfor %}
+          {% else %}
+          No active bushfire incidents in your area.
+          {% endif %}
+
+  # View 4: All Incidents List
+  - title: All Incidents
+    path: list
+    icon: mdi:format-list-bulleted
+    cards:
+      - type: entity
+        entity: sensor.abc_emergency_treehouse_total_incidents
+        name: Total Active Incidents
+
+      - type: markdown
+        title: Nearby Incidents
+        content: |
+          {% set sensor = 'sensor.abc_emergency_treehouse_nearby_incidents' %}
+          {% set incidents = state_attr(sensor, 'incidents') or [] %}
+          {% if incidents | length > 0 %}
+          {% for incident in incidents[:20] %}
+          ### {{ incident.headline }}
+          - **Type:** {{ incident.event_type }}
+          - **Alert:** {{ incident.alert_level }}
+          - **Distance:** {{ incident.distance_km | round(1) }} km {{ incident.direction }}
+          {% if incident.contains_point %}
+          - **You are inside this incident zone**
+          {% endif %}
+
+          ---
+          {% endfor %}
+          {% else %}
+          No incidents within your configured radius.
+          {% endif %}

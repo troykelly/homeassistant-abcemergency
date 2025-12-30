@@ -367,6 +367,119 @@ geo_location_sources:
 
 ---
 
+## ABC Emergency Map Card
+
+For advanced mapping with **polygon rendering**, use the companion [ABC Emergency Map Card](https://github.com/troykelly/lovelace-abc-emergency-map).
+
+### Why Use the Custom Map Card?
+
+| Feature | Native Map Card | ABC Emergency Map Card |
+|---------|-----------------|------------------------|
+| Incident markers | Yes | Yes |
+| Polygon boundaries | **No** | **Yes** |
+| Filter by sensor | No | **Yes** |
+| Filter by alert level | No | **Yes** |
+| Custom styling | Limited | **Yes** |
+| Containment highlighting | No | **Yes** |
+
+**Use the native map card** for simple incident markers. **Use ABC Emergency Map Card** when you need polygon boundaries, filtering by sensor, or visual distinction between alert levels.
+
+### Installation
+
+1. Install via HACS (add as custom repository)
+2. Add the card to your dashboard
+
+### Basic Configuration
+
+```yaml
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_incidents_total
+default_zoom: 10
+```
+
+### Filtering by Sensor
+
+The ABC Emergency Map Card can filter incidents using the `entity_ids` attribute from sensors:
+
+#### All Incidents
+
+```yaml
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_incidents_total
+```
+
+#### By Incident Type
+
+```yaml
+# Only bushfires
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_bushfires
+
+# Only floods
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_floods
+
+# Only storms
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_storms
+```
+
+#### By Alert Level
+
+```yaml
+# Only Emergency Warning (red) incidents
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_emergency_warnings
+
+# Only Watch and Act (orange) incidents
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_watch_and_acts
+
+# Only Advice (yellow) incidents
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_advices
+```
+
+#### Incidents Containing Your Location
+
+Show only incidents whose polygon boundary contains your monitored location:
+
+```yaml
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - binary_sensor.abc_emergency_home_inside_polygon
+```
+
+### Combining Multiple Sources
+
+```yaml
+type: custom:abc-emergency-map-card
+geo_location_sources:
+  - sensor.abc_emergency_home_bushfires
+  - sensor.abc_emergency_home_emergency_warnings
+default_zoom: 10
+```
+
+### Polygon Rendering
+
+When an incident has polygon boundary data (available via the `geojson_geometry` attribute), the ABC Emergency Map Card renders the actual affected area instead of just a point marker:
+
+- **Emergency Warning** - Red polygon fill
+- **Watch and Act** - Orange polygon fill
+- **Advice** - Yellow polygon fill
+
+This provides a much clearer understanding of the actual affected area compared to point markers.
+
+---
+
 ## Related Documentation
 
 - [Entities Reference](entities.md) - All sensor and binary sensor details

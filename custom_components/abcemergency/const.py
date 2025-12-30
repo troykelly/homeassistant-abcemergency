@@ -522,3 +522,37 @@ class ContainmentState(TypedDict):
     was_containing: bool
     alert_level: str
     alert_text: str
+
+
+# GeoJSON output TypedDicts for entity attributes
+
+
+class GeoJSONPolygon(TypedDict):
+    """GeoJSON Polygon output for entity attributes.
+
+    Used to expose polygon geometry in a format that can be directly
+    consumed by mapping libraries like Leaflet.
+
+    Attributes:
+        type: Always "Polygon" for this type.
+        coordinates: List of coordinate rings. First is outer boundary,
+                     rest are holes (inner rings).
+    """
+
+    type: Literal["Polygon"]
+    coordinates: list[list[list[float]]]
+
+
+class GeoJSONMultiPolygon(TypedDict):
+    """GeoJSON MultiPolygon output for entity attributes.
+
+    Used to expose multiple polygons in a format that can be directly
+    consumed by mapping libraries like Leaflet.
+
+    Attributes:
+        type: Always "MultiPolygon" for this type.
+        coordinates: List of polygons, each containing coordinate rings.
+    """
+
+    type: Literal["MultiPolygon"]
+    coordinates: list[list[list[list[float]]]]

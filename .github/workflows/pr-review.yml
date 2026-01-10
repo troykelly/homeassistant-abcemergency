@@ -97,6 +97,7 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -104,15 +105,16 @@ jobs:
           fetch-depth: 0
 
       - name: Review with Claude
-        uses: grll/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
-          use_oauth: true
-          claude_access_token: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
-          claude_refresh_token: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
-          claude_expires_at: ${{ secrets.CLAUDE_EXPIRES_AT }}
-          secrets_admin_pat: ${{ secrets.SECRETS_ADMIN_PAT }}
+          # Use OAuth token if available, otherwise fall back to API key
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           timeout_minutes: 10
-          direct_prompt: |
+          claude_args: |
+            --max-turns 10
+            --allowedTools "Bash(gh pr:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+          prompt: |
             You are reviewing a Pull Request for the Home Assistant ABC Emergency integration.
 
             ## PR Details
@@ -208,5 +210,3 @@ jobs:
             - For this project, type safety and testing are non-negotiable
             - Be especially careful with changes to config_flow.py, coordinator.py, and API handling
             - This PR has already passed CI (tests, linting, type checking) so focus on design and logic
-
-          allowed_tools: "Bash(gh pr:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"

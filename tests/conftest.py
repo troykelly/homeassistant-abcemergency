@@ -622,3 +622,56 @@ def mock_incident_has_polygon_but_empty_list() -> EmergencyIncident:
         has_polygon=True,
         polygons=[],
     )
+
+
+def make_feature_for_emergency(emergency_id: str, state: str = "nsw") -> dict[str, Any]:
+    """Create a minimal feature object matching an emergency for state filtering.
+
+    The ABC Emergency API returns features with a 1:1 mapping to emergencies.
+    Each feature has a `properties.state` field that indicates which state
+    the emergency belongs to. This function creates a minimal feature object
+    for testing purposes.
+
+    Args:
+        emergency_id: The ID of the emergency (must match emergency["id"]).
+        state: The state code (e.g., "nsw", "vic", "qld").
+
+    Returns:
+        A minimal feature dict suitable for API response mocking.
+    """
+    return {
+        "type": "Feature",
+        "id": emergency_id,
+        "geometry": {"type": "Point", "coordinates": [151.0, -33.87]},
+        "properties": {
+            "id": emergency_id,
+            "state": state,
+            "headline": "Test Feature",
+        },
+    }
+
+
+def add_features_to_response(
+    response: dict[str, Any],
+    state: str = "nsw",
+) -> dict[str, Any]:
+    """Add features array to an API response based on emergencies.
+
+    This function takes an API response dict and populates the features array
+    with corresponding feature objects for each emergency. This is needed
+    because the coordinator filters emergencies by state using the features array.
+
+    Args:
+        response: The API response dict containing "emergencies" and "features".
+        state: The state code to assign to all features (default "nsw").
+
+    Returns:
+        The modified response with populated features array.
+    """
+    emergencies = response.get("emergencies", [])
+    features = [
+        make_feature_for_emergency(e["id"], state)
+        for e in emergencies
+    ]
+    response["features"] = features
+    return response

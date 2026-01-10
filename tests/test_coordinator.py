@@ -4896,9 +4896,7 @@ class TestStateFiltering:
             "stateCount": 125,
         }
 
-        mock_client.async_get_emergencies_by_state = AsyncMock(
-            return_value=response_no_features
-        )
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response_no_features)
 
         coordinator = ABCEmergencyCoordinator(
             hass,

@@ -669,9 +669,6 @@ def add_features_to_response(
         The modified response with populated features array.
     """
     emergencies = response.get("emergencies", [])
-    features = [
-        make_feature_for_emergency(e["id"], state)
-        for e in emergencies
-    ]
+    features = [make_feature_for_emergency(e["id"], state) for e in emergencies]
     response["features"] = features
     return response

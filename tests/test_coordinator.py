@@ -110,6 +110,20 @@ def mock_config_entry_person() -> MockConfigEntry:
     )
 
 
+def _make_feature(emergency_id: str, state: str) -> dict:
+    """Create a minimal feature object for testing state filtering."""
+    return {
+        "type": "Feature",
+        "id": emergency_id,
+        "geometry": {"type": "Point", "coordinates": [151.0, -33.87]},
+        "properties": {
+            "id": emergency_id,
+            "state": state,
+            "headline": "Test",
+        },
+    }
+
+
 @pytest.fixture
 def sample_api_response() -> dict:
     """Provide a sample API response with multiple incidents."""
@@ -227,7 +241,11 @@ def sample_api_response() -> dict:
                 },
             },
         ],
-        "features": [],
+        "features": [
+            _make_feature("AUREMER-emergency1", "nsw"),
+            _make_feature("AUREMER-warning2", "nsw"),
+            _make_feature("AUREMER-flood3", "nsw"),
+        ],
         "mapBound": [[140.0, -38.0], [154.0, -28.0]],
         "stateName": "nsw",
         "incidentsNumber": 3,
@@ -4403,3 +4421,594 @@ class TestContainmentEventEdgeCases:
         # Should NOT fire exited event for the outside incident because it was never containing
         # Only inside_polygon events should have fired for incident-inside
         assert len(exited_events) == 0
+
+
+class TestStateFiltering:
+    """Test filtering emergencies by state (Issue #117).
+
+    The ABC Emergency API returns incidents from neighboring states when querying
+    for a specific state. These tests verify that the coordinator correctly filters
+    emergencies to only include those from the requested state.
+    """
+
+    async def test_filters_out_incidents_from_other_states(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that incidents from other states are filtered out."""
+        # Create response with incidents from NSW (target) and VIC (should be filtered)
+        response_with_mixed_states = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-nsw-incident",
+                    "headline": "NSW Bushfire",
+                    "to": "/emergency/warning/AUREMER-nsw-incident",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:00:00+00:00",
+                        "formattedTime": "4:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "500 ha",
+                        "status": "Out of control",
+                        "source": "NSW Rural Fire Service",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.0, -33.87]}],
+                    },
+                },
+                {
+                    "id": "AUREMER-vic-incident",
+                    "headline": "VIC Bushfire",
+                    "to": "/emergency/warning/AUREMER-vic-incident",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T04:00:00+00:00",
+                        "formattedTime": "3:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T04:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "200 ha",
+                        "status": "Going",
+                        "source": "CFA Victoria",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [145.0, -37.5]}],
+                    },
+                },
+            ],
+            "features": [
+                _make_feature("AUREMER-nsw-incident", "nsw"),
+                _make_feature("AUREMER-vic-incident", "vic"),
+            ],
+            "mapBound": [[140.0, -38.0], [154.0, -28.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 2,
+            "stateCount": 125,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=response_with_mixed_states
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Should only have 1 incident (NSW), not 2
+        assert data.total_count == 1
+        assert len(data.incidents) == 1
+        assert data.incidents[0].id == "AUREMER-nsw-incident"
+
+    async def test_filters_multiple_other_states(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test filtering when API returns incidents from multiple other states."""
+        response_with_multiple_states = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-nsw-1",
+                    "headline": "NSW Fire",
+                    "to": "/emergency/warning/AUREMER-nsw-1",
+                    "alertLevelInfoPrepared": {
+                        "text": "Advice",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:00:00+00:00",
+                        "formattedTime": "4:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "100 ha",
+                        "status": "Going",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.0, -33.87]}],
+                    },
+                },
+                {
+                    "id": "AUREMER-vic-1",
+                    "headline": "VIC Fire",
+                    "to": "/emergency/warning/AUREMER-vic-1",
+                    "alertLevelInfoPrepared": {
+                        "text": "Watch and Act",
+                        "level": "severe",
+                        "style": "severe",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T04:00:00+00:00",
+                        "formattedTime": "3:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T04:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "200 ha",
+                        "status": "Going",
+                        "source": "CFA",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [145.0, -37.5]}],
+                    },
+                },
+                {
+                    "id": "AUREMER-qld-1",
+                    "headline": "QLD Storm",
+                    "to": "/emergency/warning/AUREMER-qld-1",
+                    "alertLevelInfoPrepared": {
+                        "text": "Advice",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T03:00:00+00:00",
+                        "formattedTime": "2:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T03:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "weather", "labelText": "Storm"},
+                    "cardBody": {
+                        "type": "Storm",
+                        "size": None,
+                        "status": "Active",
+                        "source": "QLD Fire",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [153.0, -27.5]}],
+                    },
+                },
+                {
+                    "id": "AUREMER-sa-1",
+                    "headline": "SA Fire",
+                    "to": "/emergency/warning/AUREMER-sa-1",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T02:00:00+00:00",
+                        "formattedTime": "1:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T02:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "1000 ha",
+                        "status": "Going",
+                        "source": "CFS SA",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [138.0, -34.9]}],
+                    },
+                },
+            ],
+            "features": [
+                _make_feature("AUREMER-nsw-1", "nsw"),
+                _make_feature("AUREMER-vic-1", "vic"),
+                _make_feature("AUREMER-qld-1", "qld"),
+                _make_feature("AUREMER-sa-1", "sa"),
+            ],
+            "mapBound": [[113.0, -44.0], [154.0, -10.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 4,
+            "stateCount": 500,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=response_with_multiple_states
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Should only have 1 incident (NSW), filtering out VIC, QLD, SA
+        assert data.total_count == 1
+        assert len(data.incidents) == 1
+        assert data.incidents[0].id == "AUREMER-nsw-1"
+
+    async def test_state_filtering_case_insensitive(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that state filtering is case insensitive."""
+        response_with_mixed_case = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-nsw-upper",
+                    "headline": "NSW Fire",
+                    "to": "/emergency/warning/AUREMER-nsw-upper",
+                    "alertLevelInfoPrepared": {
+                        "text": "Advice",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:00:00+00:00",
+                        "formattedTime": "4:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "100 ha",
+                        "status": "Going",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.0, -33.87]}],
+                    },
+                },
+            ],
+            "features": [
+                {
+                    "type": "Feature",
+                    "id": "AUREMER-nsw-upper",
+                    "geometry": {"type": "Point", "coordinates": [151.0, -33.87]},
+                    "properties": {
+                        "id": "AUREMER-nsw-upper",
+                        "state": "NSW",  # Upper case
+                        "headline": "Test",
+                    },
+                },
+            ],
+            "mapBound": [[140.0, -38.0], [154.0, -28.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 125,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=response_with_mixed_case
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",  # Lower case in config
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Should match despite case difference
+        assert data.total_count == 1
+
+    async def test_zone_mode_filters_by_determined_state(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_zone: MockConfigEntry,
+    ) -> None:
+        """Test that zone mode also filters by state."""
+        # Location is in NSW (Sydney area)
+        response_with_mixed_states = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-nsw-zone",
+                    "headline": "NSW Fire Near Zone",
+                    "to": "/emergency/warning/AUREMER-nsw-zone",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:00:00+00:00",
+                        "formattedTime": "4:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "500 ha",
+                        "status": "Out of control",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.22, -33.87]}],
+                    },
+                },
+                {
+                    "id": "AUREMER-vic-zone",
+                    "headline": "VIC Fire (Should be filtered)",
+                    "to": "/emergency/warning/AUREMER-vic-zone",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T04:00:00+00:00",
+                        "formattedTime": "3:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T04:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "1000 ha",
+                        "status": "Out of control",
+                        "source": "CFA Victoria",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [145.0, -37.5]}],
+                    },
+                },
+            ],
+            "features": [
+                _make_feature("AUREMER-nsw-zone", "nsw"),
+                _make_feature("AUREMER-vic-zone", "vic"),
+            ],
+            "mapBound": [[140.0, -38.0], [154.0, -28.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 2,
+            "stateCount": 125,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=response_with_mixed_states
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_zone,
+            instance_type=INSTANCE_TYPE_ZONE,
+            latitude=-33.8688,  # Sydney
+            longitude=151.2093,
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Should only have NSW incident (zone is in NSW)
+        assert data.total_count == 1
+        assert len(data.incidents) == 1
+        assert data.incidents[0].id == "AUREMER-nsw-zone"
+
+    async def test_no_filtering_when_features_empty(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_state: MockConfigEntry,
+    ) -> None:
+        """Test that no filtering occurs when features array is empty."""
+        # This handles edge cases where API might not return features
+        response_no_features = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-unknown-1",
+                    "headline": "Unknown State Fire",
+                    "to": "/emergency/warning/AUREMER-unknown-1",
+                    "alertLevelInfoPrepared": {
+                        "text": "Advice",
+                        "level": "moderate",
+                        "style": "moderate",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:00:00+00:00",
+                        "formattedTime": "4:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "100 ha",
+                        "status": "Going",
+                        "source": "Unknown Service",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.0, -33.87]}],
+                    },
+                },
+            ],
+            "features": [],  # Empty features array
+            "mapBound": [[140.0, -38.0], [154.0, -28.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 1,
+            "stateCount": 125,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(return_value=response_no_features)
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_state,
+            instance_type=INSTANCE_TYPE_STATE,
+            state="nsw",
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Should return all emergencies when features is empty (fallback behavior)
+        assert data.total_count == 1
+
+    async def test_person_mode_filters_by_state(
+        self,
+        hass: HomeAssistant,
+        mock_client: MagicMock,
+        mock_config_entry_person: MockConfigEntry,
+    ) -> None:
+        """Test that person mode also filters by state."""
+        # Person is in Sydney (NSW)
+        hass.states.async_set(
+            "person.john",
+            "home",
+            {"latitude": -33.8688, "longitude": 151.2093},
+        )
+
+        response_with_mixed_states = {
+            "emergencies": [
+                {
+                    "id": "AUREMER-nsw-person",
+                    "headline": "NSW Fire",
+                    "to": "/emergency/warning/AUREMER-nsw-person",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T05:00:00+00:00",
+                        "formattedTime": "4:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T05:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "500 ha",
+                        "status": "Out of control",
+                        "source": "NSW RFS",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [151.22, -33.87]}],
+                    },
+                },
+                {
+                    "id": "AUREMER-vic-person",
+                    "headline": "VIC Fire",
+                    "to": "/emergency/warning/AUREMER-vic-person",
+                    "alertLevelInfoPrepared": {
+                        "text": "Emergency",
+                        "level": "extreme",
+                        "style": "extreme",
+                    },
+                    "emergencyTimestampPrepared": {
+                        "date": "2025-12-06T04:00:00+00:00",
+                        "formattedTime": "3:00:00 pm AEDT",
+                        "prefix": "Effective from",
+                        "updatedTime": "2025-12-06T04:00:00+00:00",
+                    },
+                    "eventLabelPrepared": {"icon": "fire", "labelText": "Bushfire"},
+                    "cardBody": {
+                        "type": "Bushfire",
+                        "size": "1000 ha",
+                        "status": "Out of control",
+                        "source": "CFA Victoria",
+                    },
+                    "geometry": {
+                        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+                        "type": "GeometryCollection",
+                        "geometries": [{"type": "Point", "coordinates": [145.0, -37.5]}],
+                    },
+                },
+            ],
+            "features": [
+                _make_feature("AUREMER-nsw-person", "nsw"),
+                _make_feature("AUREMER-vic-person", "vic"),
+            ],
+            "mapBound": [[140.0, -38.0], [154.0, -28.0]],
+            "stateName": "nsw",
+            "incidentsNumber": 2,
+            "stateCount": 125,
+        }
+
+        mock_client.async_get_emergencies_by_state = AsyncMock(
+            return_value=response_with_mixed_states
+        )
+
+        coordinator = ABCEmergencyCoordinator(
+            hass,
+            mock_client,
+            mock_config_entry_person,
+            instance_type=INSTANCE_TYPE_PERSON,
+            person_entity_id="person.john",
+        )
+
+        data = await coordinator._async_update_data()
+
+        # Should only have NSW incident (person is in NSW)
+        assert data.total_count == 1
+        assert len(data.incidents) == 1
+        assert data.incidents[0].id == "AUREMER-nsw-person"

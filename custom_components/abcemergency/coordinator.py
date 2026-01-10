@@ -48,6 +48,7 @@ from .const import (
     AlertLevel,
     ContainmentState,
     Emergency,
+    Feature,
     Geometry,
     GeometryCollectionGeometry,
     PolygonGeometry,
@@ -205,6 +206,69 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         category = INCIDENT_TYPE_TO_RADIUS_CATEGORY.get(event_type, "other")
         return self._radii.get(category, self._radii["other"])
 
+    def _filter_emergencies_by_state(
+        self,
+        emergencies: list[Emergency],
+        features: list[Feature],
+        target_state: str,
+    ) -> list[Emergency]:
+        """Filter emergencies to only include those from the target state.
+
+        The ABC Emergency API returns incidents from neighboring states when
+        querying for a specific state. This method filters them out using the
+        state field from the features array, which has a 1:1 mapping with
+        emergencies via the id field.
+
+        Args:
+            emergencies: List of emergency objects from the API.
+            features: List of feature objects from the API (contain state info).
+            target_state: The state code to filter for (e.g., 'nsw', 'vic').
+
+        Returns:
+            List of emergencies that belong to the target state.
+        """
+        # Build mapping from feature ID to state
+        feature_state_map: dict[str, str] = {}
+        for feature in features:
+            feature_id = feature.get("id", "")
+            properties = feature.get("properties", {})
+            state = properties.get("state", "")
+            if feature_id and state:
+                feature_state_map[feature_id] = state.lower()
+
+        # If no feature-to-state mapping is available, return all emergencies
+        # This handles edge cases where the API response doesn't include features
+        if not feature_state_map:
+            _LOGGER.debug(
+                "No feature state mapping available, returning all %d emergencies",
+                len(emergencies),
+            )
+            return emergencies
+
+        # Filter emergencies to only include those from the target state
+        target_state_lower = target_state.lower()
+        filtered: list[Emergency] = []
+        excluded_count = 0
+
+        for emergency in emergencies:
+            emergency_id = emergency.get("id", "")
+            emergency_state = feature_state_map.get(emergency_id, "")
+
+            if emergency_state == target_state_lower:
+                filtered.append(emergency)
+            else:
+                excluded_count += 1
+
+        if excluded_count > 0:
+            _LOGGER.debug(
+                "Filtered out %d incidents from other states (keeping %d for %s)",
+                excluded_count,
+                len(filtered),
+                target_state,
+            )
+
+        return filtered
+
     @property
     def _seen_incident_ids(self) -> set[str]:
         """Return the set of seen incident IDs for backwards compatibility."""
@@ -349,7 +413,15 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         except ABCEmergencyAPIError as err:
             raise UpdateFailed(f"API error: {err}") from err
 
-        return self._process_state_emergencies(response["emergencies"])
+        # Filter emergencies to only include those from the configured state
+        # The ABC API returns incidents from neighboring states (Issue #117)
+        filtered_emergencies = self._filter_emergencies_by_state(
+            response["emergencies"],
+            response["features"],
+            self._state,
+        )
+
+        return self._process_state_emergencies(filtered_emergencies)
 
     async def _update_zone_mode(self) -> CoordinatorData:
         """Fetch data for zone mode (incidents near a fixed location)."""
@@ -371,8 +443,16 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         except ABCEmergencyAPIError as err:
             raise UpdateFailed(f"API error: {err}") from err
 
-        return self._process_location_emergencies(
+        # Filter emergencies to only include those from the determined state
+        # The ABC API returns incidents from neighboring states (Issue #117)
+        filtered_emergencies = self._filter_emergencies_by_state(
             response["emergencies"],
+            response["features"],
+            state,
+        )
+
+        return self._process_location_emergencies(
+            filtered_emergencies,
             self._latitude,
             self._longitude,
             INSTANCE_TYPE_ZONE,
@@ -425,8 +505,16 @@ class ABCEmergencyCoordinator(DataUpdateCoordinator[CoordinatorData]):
         except ABCEmergencyAPIError as err:
             raise UpdateFailed(f"API error: {err}") from err
 
-        return self._process_location_emergencies(
+        # Filter emergencies to only include those from the determined state
+        # The ABC API returns incidents from neighboring states (Issue #117)
+        filtered_emergencies = self._filter_emergencies_by_state(
             response["emergencies"],
+            response["features"],
+            state,
+        )
+
+        return self._process_location_emergencies(
+            filtered_emergencies,
             latitude,
             longitude,
             INSTANCE_TYPE_PERSON,

@@ -107,6 +107,8 @@ jobs:
       - name: Review with Claude
         uses: anthropics/claude-code-action@v1
         with:
+          # Use OAuth token if available, otherwise fall back to API key
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           timeout_minutes: 10
           claude_args: |

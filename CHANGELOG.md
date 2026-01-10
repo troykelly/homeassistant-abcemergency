@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-01-10
+
+### Fixed
+
+- **Cross-state incident filtering** - Fixed issue where state-configured instances received incidents from neighboring states (#117)
+  - The ABC Emergency API returns incidents from nearby states when querying a specific state
+  - Added client-side filtering using the `features` array to ensure only incidents from the configured state are included
+  - Applied to all three modes: State, Zone, and Person
+  - Graceful fallback when features array is empty
+
+### Changed
+
+- **Updated CI workflow** - Migrated PR review workflow to official Claude Code GitHub Action (#119)
+  - Replaced third-party `grll/claude-code-action@beta` with official `anthropics/claude-code-action@v1`
+  - Simplified authentication using OAuth token or API key
+  - More reliable and actively maintained by Anthropic
+
 ## [0.4.5] - 2025-12-30
 
 ### Fixed
@@ -167,6 +184,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.4.6 | 2026-01-10 | Cross-state incident filtering, official Claude Code GitHub Action |
 | 0.4.5 | 2025-12-30 | Longitude normalization for state determination |
 | 0.4.4 | 2025-12-30 | Predictable geo-location entity IDs matching sensor attributes |
 | 0.4.3 | 2025-12-30 | Entity discovery attributes, alert-level count sensors |
@@ -177,7 +195,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 | 0.2.0 | 2025-12-07 | Instance-based map filtering, new events, enhanced attributes |
 | 0.1.0 | 2025-12-07 | Initial release with all core features |
 
-[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/troykelly/homeassistant-abcemergency/compare/v0.4.2...v0.4.3

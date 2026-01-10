@@ -122,10 +122,6 @@ fi
 echo "Installing Claude CLI..."
 curl -fsSL https://raw.githubusercontent.com/troykelly/claude-skills/main/install.sh | bash
 
-# Install Codex CLI globally
-echo "Installing Codex CLI..."
-curl -fsSL https://raw.githubusercontent.com/troykelly/codex-skills/main/install.sh | bash
-
 # Verify tools are available
 echo ""
 echo "=== Verifying installed tools ==="
